@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import './App.css';
 
 function App() {
   const [message, setMessage] = useState('');
@@ -43,17 +42,18 @@ function App() {
   };
 
   return (
-    <div className="App">
-      <header className="App-header">
-        <h1>Django + React App</h1>
-        <p className="welcome-message">{message}</p>
+    <div className="min-h-screen bg-gray-800 text-white">
+      <div className="container mx-auto py-10 px-4">
+        <h1 className="text-3xl font-bold text-center text-cyan-400 mb-2">Django + React App</h1>
+        <p className="text-xl text-center mb-10">{message}</p>
         
-        <div className="content-container">
-          <div className="item-form-container">
-            <h2>Add New Item</h2>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+          {/* Form Section */}
+          <div className="bg-gray-700 rounded-lg shadow-lg p-6">
+            <h2 className="text-xl font-semibold mb-4 pb-2 border-b border-cyan-400 text-cyan-400">Add New Item</h2>
             <form onSubmit={handleSubmit}>
-              <div className="form-group">
-                <label htmlFor="name">Name</label>
+              <div className="mb-4">
+                <label htmlFor="name" className="block mb-2 font-medium">Name</label>
                 <input
                   type="text"
                   id="name"
@@ -61,46 +61,58 @@ function App() {
                   value={newItem.name}
                   onChange={handleChange}
                   placeholder="Enter item name"
+                  className="w-full p-2 rounded bg-gray-600 border border-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400"
                   required
                 />
               </div>
               
-              <div className="form-group">
-                <label htmlFor="description">Description</label>
+              <div className="mb-4">
+                <label htmlFor="description" className="block mb-2 font-medium">Description</label>
                 <textarea
                   id="description"
                   name="description"
                   value={newItem.description}
                   onChange={handleChange}
                   placeholder="Enter item description"
+                  className="w-full p-2 rounded bg-gray-600 border border-gray-500 focus:outline-none focus:ring-2 focus:ring-cyan-400 min-h-[100px] resize-y"
                   required
                 />
               </div>
               
-              <button type="submit" className="submit-btn">Add Item</button>
+              <button 
+                type="submit" 
+                className="w-full bg-cyan-500 hover:bg-cyan-600 text-gray-800 font-bold py-2 px-4 rounded transition duration-300"
+              >
+                Add Item
+              </button>
             </form>
           </div>
           
-          <div className="items-container">
-            <h2>Items List</h2>
+          {/* Items List Section */}
+          <div className="bg-gray-700 rounded-lg shadow-lg p-6">
+            <h2 className="text-xl font-semibold mb-4 pb-2 border-b border-cyan-400 text-cyan-400">Items List</h2>
             {loading ? (
-              <p>Loading items...</p>
+              <div className="flex justify-center items-center h-40">
+                <div className="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-cyan-400"></div>
+              </div>
             ) : items.length > 0 ? (
-              <ul className="items-list">
+              <ul className="space-y-4 max-h-[500px] overflow-y-auto pr-2">
                 {items.map(item => (
-                  <li key={item.id} className="item-card">
-                    <h3>{item.name}</h3>
-                    <p>{item.description}</p>
-                    <p className="created-at">Created: {new Date(item.created_at).toLocaleString()}</p>
+                  <li key={item.id} className="bg-gray-600 rounded-lg p-4 border-l-4 border-cyan-400">
+                    <h3 className="text-lg font-medium text-cyan-300">{item.name}</h3>
+                    <p className="mt-2 text-gray-300">{item.description}</p>
+                    <p className="mt-2 text-xs text-gray-400 text-right">
+                      Created: {new Date(item.created_at).toLocaleString()}
+                    </p>
                   </li>
                 ))}
               </ul>
             ) : (
-              <p className="no-items">No items yet. Add some!</p>
+              <p className="text-gray-400 italic text-center py-10">No items yet. Add some!</p>
             )}
           </div>
         </div>
-      </header>
+      </div>
     </div>
   );
 }
