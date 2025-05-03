@@ -1,7 +1,4 @@
-// Timeline.js
-
-import React, { useEffect, useRef } from 'react';
-import './Timeline.css';
+import React, { useEffect, useRef, useCallback } from 'react';
 
 function Timeline({ nodes, currentIndex, onClick }) {
   const canvasRef = useRef(null);
@@ -16,15 +13,7 @@ function Timeline({ nodes, currentIndex, onClick }) {
     synthesis_tab: "#aaaaaa"
   };
   
-  useEffect(() => {
-    drawTimeline();
-    
-    // Add resize listener
-    window.addEventListener('resize', drawTimeline);
-    return () => window.removeEventListener('resize', drawTimeline);
-  }, [nodes, currentIndex]);
-  
-  const drawTimeline = () => {
+  const drawTimeline = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || nodes.length === 0) return;
     
@@ -96,7 +85,15 @@ function Timeline({ nodes, currentIndex, onClick }) {
       
       x += blockWidth + padding;
     }
-  };
+  }, [nodes, currentIndex, colors]);
+  
+  useEffect(() => {
+    drawTimeline();
+    
+    // Add resize listener
+    window.addEventListener('resize', drawTimeline);
+    return () => window.removeEventListener('resize', drawTimeline);
+  }, [nodes, currentIndex, drawTimeline]);
   
   const handleClick = (e) => {
     const canvas = canvasRef.current;

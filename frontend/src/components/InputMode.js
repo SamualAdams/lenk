@@ -1,8 +1,5 @@
-// InputMode.js
-
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import './InputMode.css';
 
 function InputMode() {
   const [cognitions, setCognitions] = useState([]);

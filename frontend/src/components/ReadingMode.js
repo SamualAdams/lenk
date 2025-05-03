@@ -1,10 +1,7 @@
-// ReadingMode.js
-
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import Timeline from './Timeline';
-import './ReadingMode.css';
 
 function ReadingMode() {
   const { id } = useParams();
@@ -17,18 +14,56 @@ function ReadingMode() {
   const [isLoading, setIsLoading] = useState(true);
   const [isSpeaking, setIsSpeaking] = useState(false);
   const [autoplayActive, setAutoplayActive] = useState(false);
-  const [presetResponses, setPresetResponses] = useState([]);
   const [presetCategories, setPresetCategories] = useState({});
   
   const synthesisRef = useRef(null);
   const speechSynthesis = window.speechSynthesis;
   const speechUtterance = useRef(null);
   
+  // Memoize the fetch function
+  const fetchCognition = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      const response = await axios.get(`/api/cognitions/${id}/`);
+      setCognition(response.data);
+      setNodes(response.data.nodes || []);
+      setIsLoading(false);
+    } catch (error) {
+      console.error('Error fetching cognition:', error);
+      setIsLoading(false);
+    }
+  }, [id]);
+  
+  const fetchPresetResponses = useCallback(async () => {
+    try {
+      const response = await axios.get('/api/preset-responses/by_category/');
+      setPresetCategories(response.data);
+    } catch (error) {
+      console.error('Error fetching preset responses:', error);
+    }
+  }, []);
+  
+  // Memoize the save function
+  const saveSynthesis = useCallback(async (nodeIndex) => {
+    if (nodeIndex < 0 || nodeIndex >= nodes.length) return;
+    
+    const node = nodes[nodeIndex];
+    
+    try {
+      await axios.post('/api/syntheses/add_or_update/', {
+        node_id: node.id,
+        content: synthesis
+      });
+    } catch (error) {
+      console.error('Error saving synthesis:', error);
+    }
+  }, [nodes, synthesis]);
+  
   // Load cognition data
   useEffect(() => {
     fetchCognition();
     fetchPresetResponses();
-  }, [id]);
+  }, [fetchCognition, fetchPresetResponses]);
   
   // Save synthesis when navigating away from a node
   const lastNodeIndexRef = useRef(-1);
@@ -47,51 +82,7 @@ function ReadingMode() {
     } else {
       setSynthesis('');
     }
-  }, [currentNodeIndex, nodes]);
-  
-  const fetchCognition = async () => {
-    try {
-      setIsLoading(true);
-      const response = await axios.get(`/api/cognitions/${id}/`);
-      setCognition(response.data);
-      setNodes(response.data.nodes || []);
-      setIsLoading(false);
-    } catch (error) {
-      console.error('Error fetching cognition:', error);
-      setIsLoading(false);
-    }
-  };
-  
-  const fetchPresetResponses = async () => {
-    try {
-      const response = await axios.get('/api/preset-responses/by_category/');
-      setPresetCategories(response.data);
-      
-      // Flatten categories into a single array
-      const allPresets = [];
-      Object.values(response.data).forEach(categoryPresets => {
-        allPresets.push(...categoryPresets);
-      });
-      setPresetResponses(allPresets);
-    } catch (error) {
-      console.error('Error fetching preset responses:', error);
-    }
-  };
-  
-  const saveSynthesis = async (nodeIndex) => {
-    if (nodeIndex < 0 || nodeIndex >= nodes.length) return;
-    
-    const node = nodes[nodeIndex];
-    
-    try {
-      await axios.post('/api/syntheses/add_or_update/', {
-        node_id: node.id,
-        content: synthesis
-      });
-    } catch (error) {
-      console.error('Error saving synthesis:', error);
-    }
-  };
+  }, [currentNodeIndex, nodes, saveSynthesis]);
   
   const toggleIllumination = async () => {
     if (nodes.length === 0 || currentNodeIndex >= nodes.length) return;
@@ -174,8 +165,8 @@ function ReadingMode() {
   };
   
   const cleanTextForSpeech = (text) => {
-    // Remove markdown and special characters
-    let cleaned = text.replace(/[#*_`~+=\[\]{}()<>|\\/@%^&$]/g, ' ');
+    // Remove markdown and special characters - fixed escape
+    let cleaned = text.replace(/[#*_`~+=[\]{}()<>|\\/@%^&$]/g, ' ');
     // Normalize whitespace
     cleaned = cleaned.replace(/\s+/g, ' ').trim();
     return cleaned;
