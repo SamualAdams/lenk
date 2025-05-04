@@ -1,11 +1,14 @@
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+import { useNavigate } from 'react-router-dom';
+import axiosInstance from '../axiosConfig'; // Import custom axios instance
 
 function InputMode() {
   const [cognitions, setCognitions] = useState([]);
   const [rawContent, setRawContent] = useState('');
   const [title, setTitle] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const navigate = useNavigate();
 
   // Load saved cognitions on component mount
   useEffect(() => {
@@ -15,11 +18,13 @@ function InputMode() {
   const fetchCognitions = async () => {
     try {
       setIsLoading(true);
-      const response = await axios.get('/api/cognitions/');
+      setError(null);
+      const response = await axiosInstance.get('/cognitions/');
       setCognitions(response.data);
       setIsLoading(false);
     } catch (error) {
       console.error('Error fetching cognitions:', error);
+      setError('Failed to load saved cognitions. Please refresh the page.');
       setIsLoading(false);
     }
   };
@@ -30,21 +35,33 @@ function InputMode() {
       return;
     }
 
+    if (!rawContent.trim()) {
+      alert('Please enter or upload some content to process');
+      return;
+    }
+
     try {
       setIsLoading(true);
+      setError(null);
+      
       // Create a new cognition
-      const cognitionResponse = await axios.post('/api/cognitions/', {
+      console.log('Creating cognition with:', { title, raw_content: rawContent });
+      const cognitionResponse = await axiosInstance.post('/cognitions/', {
         title: title,
         raw_content: rawContent
       });
       
-      // Process the text into nodes
-      await axios.post(`/api/cognitions/${cognitionResponse.data.id}/process_text/`);
+      console.log('Cognition created:', cognitionResponse.data);
       
-      // Navigate to reading mode
-      window.location.href = `/cognition/${cognitionResponse.data.id}`;
+      // Process the text into nodes
+      console.log('Processing text for cognition:', cognitionResponse.data.id);
+      await axiosInstance.post(`/cognitions/${cognitionResponse.data.id}/process_text/`);
+      
+      // Navigate to reading mode using React Router
+      navigate(`/cognition/${cognitionResponse.data.id}`);
     } catch (error) {
       console.error('Error creating cognition:', error);
+      setError('Failed to create cognition. Please try again.');
       setIsLoading(false);
     }
   };
@@ -65,10 +82,12 @@ function InputMode() {
   const handleDeleteCognition = async (id) => {
     if (window.confirm('Are you sure you want to delete this cognition?')) {
       try {
-        await axios.delete(`/api/cognitions/${id}/`);
+        setError(null);
+        await axiosInstance.delete(`/cognitions/${id}/`);
         fetchCognitions();
       } catch (error) {
         console.error('Error deleting cognition:', error);
+        setError('Failed to delete cognition. Please try again.');
       }
     }
   };
@@ -78,17 +97,22 @@ function InputMode() {
       <div className="container">
         <div className="sidebar">
           <h2>Saved Cognitions</h2>
-          {isLoading ? (
+          {isLoading && !cognitions.length ? (
             <p>Loading cognitions...</p>
+          ) : error ? (
+            <p className="error-message">{error}</p>
+          ) : cognitions.length === 0 ? (
+            <p>No saved cognitions found.</p>
           ) : (
             <ul className="cognition-list">
               {cognitions.map(cognition => (
                 <li key={cognition.id}>
                   <a href={`/cognition/${cognition.id}`}>{cognition.title}</a>
-                  <span className="node-count">({cognition.nodes_count} nodes)</span>
+                  <span className="node-count">({cognition.nodes_count || 0} nodes)</span>
                   <button 
                     className="delete-btn" 
                     onClick={() => handleDeleteCognition(cognition.id)}
+                    aria-label={`Delete ${cognition.title}`}
                   >
                     Delete
                   </button>
@@ -133,11 +157,13 @@ function InputMode() {
             <button 
               className="start-btn"
               onClick={handleCreateCognition}
-              disabled={isLoading || !rawContent}
+              disabled={isLoading || !rawContent.trim() || !title.trim()}
             >
-              Start Reading
+              {isLoading ? 'Processing...' : 'Start Reading'}
             </button>
           </div>
+          
+          {error && <p className="error-message">{error}</p>}
         </div>
       </div>
     </div>
