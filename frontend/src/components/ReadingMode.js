@@ -1,9 +1,7 @@
-import './ReadingMode.css';
-
-
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import axiosInstance from '../axiosConfig';
+import './ReadingMode.css';
 
 // Timeline component embedded directly for simplicity
 function Timeline({ nodes, currentIndex, onClick }) {
@@ -14,7 +12,7 @@ function Timeline({ nodes, currentIndex, onClick }) {
     current: "#4a86e8",
     illuminated: "#f1c232",
     current_illuminated: "#e69138",
-    border: "#333333",
+    border: "#dddddd",
     bg: "#f5f5f5",
     synthesis_tab: "#aaaaaa"
   };
@@ -40,8 +38,8 @@ function Timeline({ nodes, currentIndex, onClick }) {
     
     const padding = 2;
     const minWidth = 10;
-    const normalTop = 10;
-    const tabHeight = 6;
+    const normalTop = 5;
+    const tabHeight = 3;
     let x = 0;
     
     // Draw node blocks
@@ -64,17 +62,17 @@ function Timeline({ nodes, currentIndex, onClick }) {
       }
       
       // Set y position - blocks with synthesis start higher
-      const yStart = hasSynthesis ? 2 : normalTop;
+      const yStart = hasSynthesis ? 1 : normalTop;
       
       // Draw block
       ctx.fillStyle = color;
       ctx.strokeStyle = colors.border;
-      ctx.fillRect(x, yStart, blockWidth, height - 4);
-      ctx.strokeRect(x, yStart, blockWidth, height - 4);
+      ctx.fillRect(x, yStart, blockWidth, height - 2);
+      ctx.strokeRect(x, yStart, blockWidth, height - 2);
       
       // Draw synthesis tab if needed
       if (hasSynthesis) {
-        const tabWidth = Math.min(blockWidth - 2, 12);
+        const tabWidth = Math.min(blockWidth - 2, 8);
         ctx.fillRect(x + (blockWidth - tabWidth) / 2, yStart - tabHeight, tabWidth, tabHeight);
         ctx.strokeRect(x + (blockWidth - tabWidth) / 2, yStart - tabHeight, tabWidth, tabHeight);
       }
@@ -82,7 +80,7 @@ function Timeline({ nodes, currentIndex, onClick }) {
       // Add node number if block is wide enough
       if (blockWidth > 20) {
         ctx.fillStyle = "#000000";
-        ctx.font = "12px Inter, sans-serif";
+        ctx.font = "8px Inter, sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText((i + 1).toString(), x + blockWidth / 2, height / 2);
@@ -156,12 +154,8 @@ function ReadingMode() {
   const [autoplayActive, setAutoplayActive] = useState(false);
   const [presetCategories, setPresetCategories] = useState({});
   const [error, setError] = useState(null);
-  const [status, setStatus] = useState('');
   
   const synthesisRef = useRef(null);
-  const containerRef = useRef(null);
-  const speechSynthesis = window.speechSynthesis;
-  const speechUtterance = useRef(null);
   
   // Fetch cognition and nodes
   const fetchCognition = useCallback(async () => {
@@ -169,13 +163,12 @@ function ReadingMode() {
       setIsLoading(true);
       setError(null);
       const response = await axiosInstance.get(`/cognitions/${id}/`);
-      console.log('Cognition data:', response.data);
       setCognition(response.data);
       setNodes(response.data.nodes || []);
       setIsLoading(false);
     } catch (error) {
       console.error('Error fetching cognition:', error);
-      setError('Failed to load cognition data. Please try again.');
+      setError('Failed to load cognition data');
       setIsLoading(false);
     }
   }, [id]);
@@ -185,11 +178,9 @@ function ReadingMode() {
     try {
       setError(null);
       const response = await axiosInstance.get('/preset-responses/by_category/');
-      console.log('Preset responses:', response.data);
       setPresetCategories(response.data);
     } catch (error) {
       console.error('Error fetching preset responses:', error);
-      setError('Failed to load preset responses.');
     }
   }, []);
   
@@ -200,17 +191,12 @@ function ReadingMode() {
     const node = nodes[nodeIndex];
     
     try {
-      console.log('Saving synthesis for node:', node.id, 'Content:', synthesis);
-      setStatus('Saving synthesis...');
       await axiosInstance.post('/syntheses/add_or_update/', {
         node_id: node.id,
         content: synthesis
       });
-      setStatus('Synthesis saved');
-      setTimeout(() => setStatus(''), 2000);
     } catch (error) {
       console.error('Error saving synthesis:', error);
-      setError('Failed to save your synthesis. Please try again.');
     }
   }, [nodes, synthesis]);
   
@@ -237,7 +223,76 @@ function ReadingMode() {
     } else {
       setSynthesis('');
     }
+    
   }, [currentNodeIndex, nodes, saveSynthesis]);
+  
+  // Simple speech synthesis functions
+  const stopSpeech = () => {
+    if (window.speechSynthesis) {
+      window.speechSynthesis.cancel();
+      setIsSpeaking(false);
+      setAutoplayActive(false);
+    }
+  };
+  
+  const readText = (text) => {
+    if (!window.speechSynthesis) {
+      console.error("Speech synthesis not supported");
+      return;
+    }
+    
+    // Cancel any ongoing speech
+    stopSpeech();
+    
+    // Create a new utterance with the text
+    const utterance = new SpeechSynthesisUtterance(text);
+    
+    // Set event handlers
+    utterance.onstart = () => setIsSpeaking(true);
+    utterance.onend = () => {
+      setIsSpeaking(false);
+      
+      // If autoplay is active and not at the last node, go to next node
+      if (autoplayActive && currentNodeIndex < nodes.length - 1) {
+        setTimeout(() => {
+          setCurrentNodeIndex(prevIndex => prevIndex + 1);
+        }, 500);
+      } else {
+        setAutoplayActive(false);
+      }
+    };
+    
+    utterance.onerror = (event) => {
+      console.error("Speech synthesis error:", event);
+      setIsSpeaking(false);
+      setAutoplayActive(false);
+    };
+    
+    // Start speaking
+    window.speechSynthesis.speak(utterance);
+  };
+  
+  // Read the current node
+  const readCurrentNode = () => {
+    if (currentNodeIndex >= 0 && currentNodeIndex < nodes.length) {
+      const nodeText = nodes[currentNodeIndex].content || '';
+      
+      // Clean up text before reading
+      const cleanText = nodeText
+        .replace(/[#*_`~+=[\]{}()<>|\\/@%^&$]/g, ' ')
+        .replace(/\s+/g, ' ')
+        .trim();
+      
+      readText(cleanText);
+    }
+  };
+  
+  // Effect to auto-read when autoplay is turned on or node changes during autoplay
+  useEffect(() => {
+    if (autoplayActive && !isSpeaking && nodes.length > 0) {
+      readCurrentNode();
+    }
+  }, [autoplayActive, currentNodeIndex, nodes, isSpeaking]);
   
   // Keyboard events
   useEffect(() => {
@@ -249,17 +304,26 @@ function ReadingMode() {
       
       switch (e.key) {
         case 'ArrowLeft':
-          goToPreviousNode();
+          e.preventDefault();
+          if (currentNodeIndex > 0) {
+            stopSpeech();
+            setCurrentNodeIndex(prevIndex => prevIndex - 1);
+          }
           break;
         case 'ArrowRight':
-          goToNextNode();
+          e.preventDefault();
+          if (currentNodeIndex < nodes.length - 1) {
+            stopSpeech();
+            setCurrentNodeIndex(prevIndex => prevIndex + 1);
+          }
           break;
         case 'ArrowUp':
+          e.preventDefault();
           readCurrentNode();
           break;
         case 'ArrowDown':
+          e.preventDefault();
           stopSpeech();
-          setAutoplayActive(false);
           break;
         default:
           break;
@@ -268,7 +332,32 @@ function ReadingMode() {
     
     document.addEventListener('keydown', handleKeyDown);
     return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [currentNodeIndex, nodes.length, isSpeaking, autoplayActive]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [currentNodeIndex, nodes.length]);
+  
+  // Navigation functions
+  const goToNextNode = () => {
+    if (currentNodeIndex < nodes.length - 1) {
+      stopSpeech();
+      setCurrentNodeIndex(prevIndex => prevIndex + 1);
+    }
+  };
+  
+  const goToPreviousNode = () => {
+    if (currentNodeIndex > 0) {
+      stopSpeech();
+      setCurrentNodeIndex(prevIndex => prevIndex - 1);
+    }
+  };
+  
+  // Toggle autoplay
+  const toggleAutoplay = () => {
+    if (autoplayActive) {
+      stopSpeech();
+    } else {
+      setAutoplayActive(true);
+      readCurrentNode();
+    }
+  };
   
   // Toggle node illumination
   const toggleIllumination = async () => {
@@ -287,94 +376,6 @@ function ReadingMode() {
       setNodes(updatedNodes);
     } catch (error) {
       console.error('Error toggling illumination:', error);
-      setError('Failed to toggle illumination. Please try again.');
-    }
-  };
-  
-  // Navigation functions
-  const goToNextNode = () => {
-    stopSpeech();
-    
-    if (currentNodeIndex < nodes.length - 1) {
-      setCurrentNodeIndex(prevIndex => prevIndex + 1);
-      
-      // Auto-read if not in autoplay (autoplay handles reading)
-      if (!autoplayActive) {
-        setTimeout(() => readCurrentNode(), 100);
-      }
-    }
-  };
-  
-  const goToPreviousNode = () => {
-    stopSpeech();
-    setAutoplayActive(false);
-    
-    if (currentNodeIndex > 0) {
-      setCurrentNodeIndex(prevIndex => prevIndex - 1);
-      setTimeout(() => readCurrentNode(), 100);
-    }
-  };
-  
-  // Speech functions
-  const readCurrentNode = () => {
-    if (isSpeaking) return;
-    
-    const node = nodes[currentNodeIndex];
-    if (!node) return;
-    
-    const cleanText = cleanTextForSpeech(node.content);
-    
-    // Create a new utterance
-    speechUtterance.current = new SpeechSynthesisUtterance(cleanText);
-    speechUtterance.current.rate = 1.1; // Slightly faster than normal
-    
-    // Set up event handlers
-    speechUtterance.current.onstart = () => {
-      setIsSpeaking(true);
-      setStatus('Reading...');
-    };
-    
-    speechUtterance.current.onend = () => {
-      setIsSpeaking(false);
-      setStatus('');
-      
-      // If autoplay is active, move to next node
-      if (autoplayActive) {
-        setTimeout(() => {
-          if (currentNodeIndex < nodes.length - 1) {
-            goToNextNode();
-          } else {
-            setAutoplayActive(false);
-          }
-        }, 500);
-      }
-    };
-    
-    // Start speaking
-    speechSynthesis.speak(speechUtterance.current);
-  };
-  
-  const stopSpeech = () => {
-    speechSynthesis.cancel();
-    setIsSpeaking(false);
-    setStatus('');
-  };
-  
-  const cleanTextForSpeech = (text) => {
-    // Remove markdown and special characters - fixed escape
-    let cleaned = text.replace(/[#*_`~+=[\]{}()<>|\\/@%^&$]/g, ' ');
-    // Normalize whitespace
-    cleaned = cleaned.replace(/\s+/g, ' ').trim();
-    return cleaned;
-  };
-  
-  const toggleAutoplay = () => {
-    if (autoplayActive) {
-      setAutoplayActive(false);
-      stopSpeech();
-    } else {
-      setAutoplayActive(true);
-      readCurrentNode();
     }
   };
   
@@ -402,17 +403,13 @@ function ReadingMode() {
     
     try {
       setError(null);
-      setStatus('Adding preset response...');
-      console.log('Adding preset response:', presetId);
       
       // Create a synthesis first if it doesn't exist
       if (!nodes[currentNodeIndex]?.synthesis?.id) {
-        console.log('Creating synthesis first for node:', nodes[currentNodeIndex].id);
-        const synthResponse = await axiosInstance.post('/syntheses/add_or_update/', {
+        await axiosInstance.post('/syntheses/add_or_update/', {
           node_id: nodes[currentNodeIndex].id,
           content: synthesis
         });
-        console.log('Synthesis created:', synthResponse.data);
       }
       
       // Now get fresh data to ensure we have the synthesis ID
@@ -422,51 +419,53 @@ function ReadingMode() {
       const synthId = nodes[currentNodeIndex]?.synthesis?.id;
       if (!synthId) {
         console.error('No synthesis ID available after creation');
-        setError('Failed to add preset response. Please try again.');
         return;
       }
       
       // Add the preset to the synthesis
-      console.log('Adding preset to synthesis:', synthId, presetId);
-      const response = await axiosInstance.post(`/syntheses/${synthId}/add_preset/`, {
+      await axiosInstance.post(`/syntheses/${synthId}/add_preset/`, {
         preset_id: presetId
       });
-      console.log('Preset added response:', response.data);
       
       // Refresh to show updated synthesis
       await fetchCognition();
-      setStatus('Preset response added');
-      setTimeout(() => setStatus(''), 2000);
     } catch (error) {
       console.error('Error adding preset response:', error);
-      setError('Failed to add preset response. Please try again.');
-      setStatus('');
     }
   };
   
   if (isLoading) {
-    return <div className="reading-mode-loading">Loading cognition...</div>;
+    return <div className="reading-mode-loading">Loading...</div>;
   }
   
   if (!cognition) {
-    return <div className="reading-mode-error">Could not load cognition.</div>;
+    return <div className="reading-mode-error">Could not load cognition</div>;
   }
   
   const currentNode = nodes[currentNodeIndex] || null;
   
   return (
-    <div className="reading-mode-container" ref={containerRef}>
-      <header className="reading-mode-header">
-        <h1>{cognition.title}</h1>
-      </header>
-      
+    <div className="reading-mode-container">
       <div className="reading-mode-split-layout">
         {/* Left Side - Controls and Synthesis */}
         <div className="reading-mode-controls-panel">
-          <div className="node-navigation">
-            <h2>Navigation</h2>
+          <div className="node-info">
+            <div className="title-row">
+              <div className="cognition-title">{cognition.title}</div>
+              <button onClick={handleReturnHome} className="home-btn" title="Return to Home">Home</button>
+            </div>
+            
             <div className="node-position">
               Node {currentNodeIndex + 1} of {nodes.length}
+              {isSpeaking && <span className="reading-indicator"> (Reading...)</span>}
+            </div>
+            
+            <div className="timeline-wrapper">
+              <Timeline 
+                nodes={nodes} 
+                currentIndex={currentNodeIndex}
+                onClick={handleTimelineClick} 
+              />
             </div>
             
             <div className="navigation-controls">
@@ -476,7 +475,7 @@ function ReadingMode() {
                 className="nav-btn"
                 title="Previous Node (Left Arrow)"
               >
-                &larr; Previous
+                ← Prev
               </button>
               <button 
                 onClick={goToNextNode}
@@ -484,17 +483,8 @@ function ReadingMode() {
                 className="nav-btn"
                 title="Next Node (Right Arrow)"
               >
-                Next &rarr;
+                Next →
               </button>
-            </div>
-            
-            <div className="timeline-wrapper">
-              <h3>Document Timeline</h3>
-              <Timeline 
-                nodes={nodes} 
-                currentIndex={currentNodeIndex}
-                onClick={handleTimelineClick} 
-              />
             </div>
             
             <div className="playback-controls">
@@ -520,54 +510,29 @@ function ReadingMode() {
                 className={`control-btn ${autoplayActive ? 'active' : ''}`}
                 title="Toggle Autoplay"
               >
-                {autoplayActive ? '⏹ Stop Autoplay' : '▶ Start Autoplay'}
+                {autoplayActive ? '⏹ Stop' : '▶ Play'}
               </button>
-            </div>
-            
-            <div className="node-actions">
               <button 
                 onClick={toggleIllumination}
                 disabled={isLoading}
                 className={`control-btn ${currentNode?.is_illuminated ? 'active' : ''}`}
                 title="Toggle Illumination"
               >
-                {currentNode?.is_illuminated ? '★ Marked' : '☆ Mark as Important'}
+                {currentNode?.is_illuminated ? '★' : '☆'}
               </button>
-              <button 
-                onClick={handleReturnHome}
-                className="control-btn home-btn"
-                title="Return to Home"
-              >
-                Home
-              </button>
-            </div>
-            
-            {status && <div className="status-message">{status}</div>}
-            {error && <div className="error-message">{error}</div>}
-            
-            <div className="keyboard-shortcuts">
-              <h3>Keyboard Shortcuts</h3>
-              <ul>
-                <li>← Previous Node</li>
-                <li>→ Next Node</li>
-                <li>↑ Read Aloud</li>
-                <li>↓ Stop Reading</li>
-              </ul>
             </div>
           </div>
           
           <div className="synthesis-section">
-            <h2>Your Synthesis</h2>
             <textarea
               ref={synthesisRef}
               className="synthesis-textarea"
               value={synthesis}
               onChange={handleSynthesisChange}
-              placeholder="Enter your synthesis here..."
+              placeholder="Write your synthesis here..."
             />
             
             <div className="preset-responses">
-              <h3>Preset Responses</h3>
               <select 
                 onChange={(e) => {
                   if (e.target.value) {
@@ -589,6 +554,8 @@ function ReadingMode() {
                 ))}
               </select>
             </div>
+            
+            {error && <div className="error-message">{error}</div>}
           </div>
         </div>
         

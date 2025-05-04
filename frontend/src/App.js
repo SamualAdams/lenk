@@ -9,7 +9,7 @@ function App() {
   return (
     <Router>
       <div className="App">
-        <Navigation />
+        {/* <Navigation /> */}
         <Routes>
           <Route path="/" element={<InputMode />} />
           <Route path="/cognition/:id" element={<ReadingMode />} />
