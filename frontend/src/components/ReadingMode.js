@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
+import { useSpeechSynthesis } from 'react-speech-kit';
 import axiosInstance from '../axiosConfig';
 import './ReadingMode.css';
 
-// Timeline component embedded directly for simplicity
+// Timeline component (unchanged)
 function Timeline({ nodes, currentIndex, onClick }) {
   const canvasRef = useRef(null);
   
@@ -150,12 +151,28 @@ function ReadingMode() {
   const [currentNodeIndex, setCurrentNodeIndex] = useState(0);
   const [synthesis, setSynthesis] = useState('');
   const [isLoading, setIsLoading] = useState(true);
-  const [isSpeaking, setIsSpeaking] = useState(false);
   const [autoplayActive, setAutoplayActive] = useState(false);
   const [presetCategories, setPresetCategories] = useState({});
   const [error, setError] = useState(null);
+  const [speakText, setSpeakText] = useState('');
   
   const synthesisRef = useRef(null);
+  const autoplayTimerRef = useRef(null);
+  
+  // Use react-speech-kit's useSpeechSynthesis hook
+  const { speak, speaking, supported, voices, cancel } = useSpeechSynthesis({
+    onEnd: () => {
+      if (autoplayActive && currentNodeIndex < nodes.length - 1) {
+        // Move to next node after speech ends
+        autoplayTimerRef.current = setTimeout(() => {
+          setCurrentNodeIndex(prev => prev + 1);
+        }, 1000);
+      } else if (currentNodeIndex >= nodes.length - 1 && autoplayActive) {
+        // At the end, turn off autoplay
+        setAutoplayActive(false);
+      }
+    }
+  });
   
   // Fetch cognition and nodes
   const fetchCognition = useCallback(async () => {
@@ -204,7 +221,21 @@ function ReadingMode() {
   useEffect(() => {
     fetchCognition();
     fetchPresetResponses();
+    
+    // Cleanup timers on unmount
+    return () => {
+      if (autoplayTimerRef.current) {
+        clearTimeout(autoplayTimerRef.current);
+      }
+    };
   }, [fetchCognition, fetchPresetResponses]);
+  
+  // Update speaking text when node changes
+  useEffect(() => {
+    if (nodes.length > 0 && currentNodeIndex >= 0 && currentNodeIndex < nodes.length) {
+      setSpeakText(nodes[currentNodeIndex].content || '');
+    }
+  }, [nodes, currentNodeIndex]);
   
   // Save synthesis when navigating away from a node
   const lastNodeIndexRef = useRef(-1);
@@ -224,75 +255,87 @@ function ReadingMode() {
       setSynthesis('');
     }
     
-  }, [currentNodeIndex, nodes, saveSynthesis]);
-  
-  // Simple speech synthesis functions
-  const stopSpeech = () => {
-    if (window.speechSynthesis) {
-      window.speechSynthesis.cancel();
-      setIsSpeaking(false);
-      setAutoplayActive(false);
+    // Stop any ongoing speech when changing nodes manually
+    cancel();
+    
+    // If autoplay is active, start reading the new node after a short delay
+    if (autoplayActive) {
+      autoplayTimerRef.current = setTimeout(() => {
+        readCurrentNode();
+      }, 300);
     }
-  };
+  }, [currentNodeIndex, nodes, saveSynthesis, autoplayActive, cancel]);
   
-  const readText = (text) => {
-    if (!window.speechSynthesis) {
-      console.error("Speech synthesis not supported");
-      return;
+  // Effect to handle autoplay activation
+  useEffect(() => {
+    if (autoplayActive && !speaking && nodes.length > 0) {
+      autoplayTimerRef.current = setTimeout(() => {
+        readCurrentNode();
+      }, 300);
     }
     
-    // Cancel any ongoing speech
-    stopSpeech();
-    
-    // Create a new utterance with the text
-    const utterance = new SpeechSynthesisUtterance(text);
-    
-    // Set event handlers
-    utterance.onstart = () => setIsSpeaking(true);
-    utterance.onend = () => {
-      setIsSpeaking(false);
-      
-      // If autoplay is active and not at the last node, go to next node
-      if (autoplayActive && currentNodeIndex < nodes.length - 1) {
-        setTimeout(() => {
-          setCurrentNodeIndex(prevIndex => prevIndex + 1);
-        }, 500);
-      } else {
-        setAutoplayActive(false);
+    return () => {
+      if (autoplayTimerRef.current) {
+        clearTimeout(autoplayTimerRef.current);
       }
     };
-    
-    utterance.onerror = (event) => {
-      console.error("Speech synthesis error:", event);
-      setIsSpeaking(false);
-      setAutoplayActive(false);
-    };
-    
-    // Start speaking
-    window.speechSynthesis.speak(utterance);
-  };
+  }, [autoplayActive, speaking, nodes]);
   
   // Read the current node
   const readCurrentNode = () => {
     if (currentNodeIndex >= 0 && currentNodeIndex < nodes.length) {
       const nodeText = nodes[currentNodeIndex].content || '';
       
-      // Clean up text before reading
-      const cleanText = nodeText
-        .replace(/[#*_`~+=[\]{}()<>|\\/@%^&$]/g, ' ')
-        .replace(/\s+/g, ' ')
-        .trim();
-      
-      readText(cleanText);
+      if (nodeText.trim()) {
+        // Select a good voice if available
+        let selectedVoice = null;
+        
+        if (voices && voices.length > 0) {
+          // Try to find a male English voice
+          selectedVoice = voices.find(voice => 
+            voice.lang.includes('en') && 
+            (voice.name.includes('Male') || 
+             voice.name.includes('David') || 
+             voice.name.includes('Google UK English Male'))
+          );
+          
+          // If no male voice found, use any English voice
+          if (!selectedVoice) {
+            selectedVoice = voices.find(voice => voice.lang.includes('en'));
+          }
+          
+          // If still no voice, use the first available
+          if (!selectedVoice && voices.length > 0) {
+            selectedVoice = voices[0];
+          }
+        }
+        
+        // Clean up text to ensure better speech
+        const cleanText = nodeText
+          .replace(/[#*_`~+=[\]{}()<>|\\/@%^&$]/g, ' ')
+          .replace(/\s+/g, ' ')
+          .trim();
+        
+        // Speak with the selected voice
+        speak({ 
+          text: cleanText,
+          voice: selectedVoice
+        });
+      } else if (autoplayActive && currentNodeIndex < nodes.length - 1) {
+        // If node has no content and autoplay is active, move to next node
+        setCurrentNodeIndex(prev => prev + 1);
+      }
     }
   };
   
-  // Effect to auto-read when autoplay is turned on or node changes during autoplay
-  useEffect(() => {
-    if (autoplayActive && !isSpeaking && nodes.length > 0) {
-      readCurrentNode();
+  // Stop speech
+  const stopSpeech = () => {
+    cancel();
+    if (autoplayTimerRef.current) {
+      clearTimeout(autoplayTimerRef.current);
+      autoplayTimerRef.current = null;
     }
-  }, [autoplayActive, currentNodeIndex, nodes, isSpeaking]);
+  };
   
   // Keyboard events
   useEffect(() => {
@@ -353,9 +396,9 @@ function ReadingMode() {
   const toggleAutoplay = () => {
     if (autoplayActive) {
       stopSpeech();
+      setAutoplayActive(false);
     } else {
       setAutoplayActive(true);
-      readCurrentNode();
     }
   };
   
@@ -434,6 +477,13 @@ function ReadingMode() {
     }
   };
   
+  // Show warning if speech synthesis is not supported
+  useEffect(() => {
+    if (!supported) {
+      console.warn('Speech synthesis is not supported in this browser');
+    }
+  }, [supported]);
+  
   if (isLoading) {
     return <div className="reading-mode-loading">Loading...</div>;
   }
@@ -457,7 +507,8 @@ function ReadingMode() {
             
             <div className="node-position">
               Node {currentNodeIndex + 1} of {nodes.length}
-              {isSpeaking && <span className="reading-indicator"> (Reading...)</span>}
+              {speaking && <span className="reading-indicator"> (Reading...)</span>}
+              {!supported && <span className="error-message"> (Speech not supported in this browser)</span>}
             </div>
             
             <div className="timeline-wrapper">
@@ -490,7 +541,7 @@ function ReadingMode() {
             <div className="playback-controls">
               <button 
                 onClick={readCurrentNode} 
-                disabled={isSpeaking || isLoading}
+                disabled={speaking || isLoading || !supported}
                 className="control-btn"
                 title="Read Aloud (Up Arrow)"
               >
@@ -498,7 +549,7 @@ function ReadingMode() {
               </button>
               <button 
                 onClick={stopSpeech}
-                disabled={!isSpeaking}
+                disabled={!speaking}
                 className="control-btn"
                 title="Stop Reading (Down Arrow)"
               >
@@ -506,7 +557,7 @@ function ReadingMode() {
               </button>
               <button 
                 onClick={toggleAutoplay}
-                disabled={isLoading}
+                disabled={isLoading || !supported}
                 className={`control-btn ${autoplayActive ? 'active' : ''}`}
                 title="Toggle Autoplay"
               >
