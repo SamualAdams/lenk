@@ -1,3 +1,4 @@
+import './InputMode.css';
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import axiosInstance from '../axiosConfig'; // Import custom axios instance
@@ -44,13 +45,13 @@ function InputMode() {
       setIsLoading(true);
       setError(null);
       
-      // Use the specific create endpoint
+      // Use the regular endpoint, not the custom create endpoint
       console.log('Creating cognition with:', { title, raw_content: rawContent });
-      const cognitionResponse = await axiosInstance.post('/cognitions/create/', {
+      const cognitionResponse = await axiosInstance.post('/cognitions/', {
           title: title,
           raw_content: rawContent
       });
-    
+      
       console.log('Cognition created:', cognitionResponse.data);
       
       // Process the text into nodes

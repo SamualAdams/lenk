@@ -1,4 +1,5 @@
 import React, { useEffect, useRef, useCallback } from 'react';
+import './Timeline.css';
 
 function Timeline({ nodes, currentIndex, onClick }) {
   const canvasRef = useRef(null);
@@ -33,10 +34,10 @@ function Timeline({ nodes, currentIndex, onClick }) {
     const totalChars = nodes.reduce((sum, node) => sum + node.character_count, 0);
     if (totalChars === 0) return;
     
-    const padding = 1;
-    const minWidth = 3;
-    const normalTop = 10;
-    const tabHeight = 4;
+    const padding = 2;
+    const minWidth = 5;
+    const normalTop = 15;
+    const tabHeight = 6;
     let x = 0;
     
     // Draw node blocks
@@ -64,20 +65,20 @@ function Timeline({ nodes, currentIndex, onClick }) {
       // Draw block
       ctx.fillStyle = color;
       ctx.strokeStyle = colors.border;
-      ctx.fillRect(x, yStart, blockWidth, height - 2);
-      ctx.strokeRect(x, yStart, blockWidth, height - 2);
+      ctx.fillRect(x, yStart, blockWidth, height - 4);
+      ctx.strokeRect(x, yStart, blockWidth, height - 4);
       
       // Draw synthesis tab if needed
       if (hasSynthesis) {
-        const tabWidth = Math.min(blockWidth - 2, 10);
+        const tabWidth = Math.min(blockWidth - 2, 15);
         ctx.fillRect(x + (blockWidth - tabWidth) / 2, yStart - tabHeight, tabWidth, tabHeight);
         ctx.strokeRect(x + (blockWidth - tabWidth) / 2, yStart - tabHeight, tabWidth, tabHeight);
       }
       
       // Add node number if block is wide enough
-      if (blockWidth > 15) {
+      if (blockWidth > 20) {
         ctx.fillStyle = "#000000";
-        ctx.font = "8px Helvetica";
+        ctx.font = "10px Inter, sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
         ctx.fillText((i + 1).toString(), x + blockWidth / 2, height / 2);
@@ -104,8 +105,8 @@ function Timeline({ nodes, currentIndex, onClick }) {
     const width = canvas.clientWidth;
     
     const totalChars = nodes.reduce((sum, node) => sum + node.character_count, 0);
-    const padding = 1;
-    const minWidth = 3;
+    const padding = 2;
+    const minWidth = 5;
     
     let cumulativeX = 0;
     

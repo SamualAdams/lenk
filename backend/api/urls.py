@@ -3,6 +3,13 @@ from django.urls import path, include
 from rest_framework.routers import DefaultRouter
 from . import views
 
+# Create specific URL patterns first, before the router
+urlpatterns = [
+    path('hello/', views.hello_world, name='hello_world'),
+    path('cognitions/create/', views.create_cognition, name='create_cognition'),
+]
+
+# Then add router URLs
 router = DefaultRouter()
 router.register(r'cognitions', views.CognitionViewSet)
 router.register(r'nodes', views.NodeViewSet)
@@ -10,9 +17,5 @@ router.register(r'syntheses', views.SynthesisViewSet)
 router.register(r'preset-responses', views.PresetResponseViewSet)
 router.register(r'arcs', views.ArcViewSet)
 
-urlpatterns = [
-    path('hello/', views.hello_world, name='hello_world'),
-    path('', include(router.urls)),
-    path('cognitions/create/', views.create_cognition, name='create_cognition'),
-
-]
+# Append router URLs to the urlpatterns
+urlpatterns += router.urls
