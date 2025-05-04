@@ -13,4 +13,6 @@ router.register(r'arcs', views.ArcViewSet)
 urlpatterns = [
     path('hello/', views.hello_world, name='hello_world'),
     path('', include(router.urls)),
+    path('cognitions/create/', views.create_cognition, name='create_cognition'),
+
 ]

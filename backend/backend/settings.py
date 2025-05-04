@@ -140,13 +140,14 @@ CORS_ALLOW_METHODS = [
     'PUT',
 ]
 
-# REST Framework Settings
+# Add this to disable CSRF for API endpoints (be cautious with this in production)
+CSRF_TRUSTED_ORIGINS = ['http://localhost:3000']
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.AllowAny',
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.SessionAuthentication',
+        # Remove SessionAuthentication as it enforces CSRF
         'rest_framework.authentication.BasicAuthentication',
     ],
     'DEFAULT_PARSER_CLASSES': [

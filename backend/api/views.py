@@ -10,12 +10,29 @@ from .serializers import (
 )
 import re
 
+from django.views.decorators.csrf import csrf_exempt
+from rest_framework.decorators import api_view, action, permission_classes
+from rest_framework.permissions import AllowAny
+
 @api_view(['GET'])
 def hello_world(request):
     return Response({"message": "Hello, world!"})
 
+from rest_framework import permissions
+
+@api_view(['POST'])
+@csrf_exempt
+@permission_classes([AllowAny])
+def create_cognition(request):
+    # Create the cognition
+    serializer = CognitionSerializer(data=request.data)
+    serializer.is_valid(raise_exception=True)
+    cognition = serializer.save()
+    return Response(serializer.data, status=status.HTTP_201_CREATED)
+
 class CognitionViewSet(viewsets.ModelViewSet):
     queryset = Cognition.objects.all().order_by('-created_at')
+    permission_classes = [permissions.AllowAny]  # Explicitly set permissions
     
     def get_serializer_class(self):
         if self.action == 'retrieve':

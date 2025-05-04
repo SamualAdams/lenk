@@ -44,13 +44,13 @@ function InputMode() {
       setIsLoading(true);
       setError(null);
       
-      // Create a new cognition
+      // Use the specific create endpoint
       console.log('Creating cognition with:', { title, raw_content: rawContent });
-      const cognitionResponse = await axiosInstance.post('/cognitions/', {
-        title: title,
-        raw_content: rawContent
+      const cognitionResponse = await axiosInstance.post('/cognitions/create/', {
+          title: title,
+          raw_content: rawContent
       });
-      
+    
       console.log('Cognition created:', cognitionResponse.data);
       
       // Process the text into nodes
