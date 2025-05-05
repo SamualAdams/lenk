@@ -132,7 +132,8 @@ function ReadingMode() {
     try {
       setIsLoading(true);
       setError(null);
-      const response = await axiosInstance.get(`/cognitions/${id}/`);
+      const response = await axiosInstance.get(`/cognitions/${id}/?include_syntheses=true`);
+      console.log("API response:", response.data);
       setCognition(response.data);
       setNodes(response.data.nodes || []);
       setIsLoading(false);
@@ -159,10 +160,19 @@ function ReadingMode() {
       if (nodeIndex < 0 || nodeIndex >= nodes.length) return;
       const node = nodes[nodeIndex];
       try {
-        await axiosInstance.post("/syntheses/add_or_update/", {
+        const response = await axiosInstance.post("/syntheses/add_or_update/", {
           node_id: node.id,
           content: synthesis,
         });
+        const updatedNodes = [...nodes];
+        updatedNodes[nodeIndex] = {
+          ...node,
+          synthesis: {
+            id: response.data.id,
+            content: synthesis
+          }
+        };
+        setNodes(updatedNodes);
       } catch (err) {
         // ignore
       }
@@ -219,11 +229,20 @@ function ReadingMode() {
   // --- Update synthesis textarea when node changes ---
   useEffect(() => {
     if (nodes.length && currentNodeIndex >= 0 && currentNodeIndex < nodes.length) {
+      console.log("Current node:", nodes[currentNodeIndex]);
+      console.log("Synthesis data:", nodes[currentNodeIndex]?.synthesis);
       setSynthesis(nodes[currentNodeIndex]?.synthesis?.content || "");
     } else {
       setSynthesis("");
     }
   }, [nodes, currentNodeIndex]);
+
+  useEffect(() => {
+    console.log("Updated nodes:", nodes);
+  }, [nodes]);
+  useEffect(() => {
+    console.log("Current synthesis state:", synthesis);
+  }, [synthesis]);
 
   // --- Save synthesis when leaving node ---
   useEffect(() => {

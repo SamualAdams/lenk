@@ -33,6 +33,10 @@
   .timeline-label {
     position: relative;
     text-align: center;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    height: 100%;
   }
   
   /* Node markers */
@@ -90,13 +94,15 @@
   /* Synthesis marker styling (will be drawn on canvas) */
   .synthesis-marker {
     position: absolute;
-    top: 0;
-    width: 8px;
-    height: 8px;
+    top: -4px;
+    width: 12px;
+    height: 12px;
     background-color: var(--accent-color);
     border-radius: 50%;
+    border: 2px solid white;
     transform: translateX(-50%);
     z-index: 6;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
   }
   
   /* Timeline legend */
