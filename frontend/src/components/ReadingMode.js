@@ -1,13 +1,13 @@
-import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { useSpeechSynthesis } from 'react-speech-kit';
-import axiosInstance from '../axiosConfig';
-import './ReadingMode.css';
+import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useParams, useNavigate } from "react-router-dom";
+import { useSpeechSynthesis } from "react-speech-kit";
+import axiosInstance from "../axiosConfig";
+import "./ReadingMode.css";
 
 // Timeline component (unchanged)
 function Timeline({ nodes, currentIndex, onClick }) {
+  // ... Timeline code is unchanged, see above ...
   const canvasRef = useRef(null);
-  
   const colors = {
     normal: "#cccccc",
     current: "#4a86e8",
@@ -15,70 +15,48 @@ function Timeline({ nodes, currentIndex, onClick }) {
     current_illuminated: "#e69138",
     border: "#dddddd",
     bg: "#f5f5f5",
-    synthesis_tab: "#aaaaaa"
+    synthesis_tab: "#aaaaaa",
   };
-  
   const drawTimeline = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas || nodes.length === 0) return;
-    
-    const ctx = canvas.getContext('2d');
+    const ctx = canvas.getContext("2d");
     const width = canvas.clientWidth;
     const height = canvas.clientHeight;
-    
-    // Update canvas size to match container
     canvas.width = width;
     canvas.height = height;
-    
-    // Clear canvas
     ctx.fillStyle = colors.bg;
     ctx.fillRect(0, 0, width, height);
-    
-    // Calculate total character count
     const totalChars = nodes.reduce((sum, node) => sum + node.character_count, 0) || nodes.length;
-    
     const padding = 2;
     const minWidth = 10;
     const normalTop = 5;
     const tabHeight = 3;
     let x = 0;
-    
-    // Draw node blocks
     for (let i = 0; i < nodes.length; i++) {
       const node = nodes[i];
       const blockWidth = Math.max(
         minWidth,
         (node.character_count / totalChars) * (width - nodes.length * padding)
       );
-      
       const hasSynthesis = node.synthesis && node.synthesis.content;
       const isIlluminated = node.is_illuminated;
-      
-      // Set color based on state
       let color;
       if (i === currentIndex) {
         color = isIlluminated ? colors.current_illuminated : colors.current;
       } else {
         color = isIlluminated ? colors.illuminated : colors.normal;
       }
-      
-      // Set y position - blocks with synthesis start higher
       const yStart = hasSynthesis ? 1 : normalTop;
-      
-      // Draw block
       ctx.fillStyle = color;
       ctx.strokeStyle = colors.border;
       ctx.fillRect(x, yStart, blockWidth, height - 2);
       ctx.strokeRect(x, yStart, blockWidth, height - 2);
-      
-      // Draw synthesis tab if needed
       if (hasSynthesis) {
         const tabWidth = Math.min(blockWidth - 2, 8);
         ctx.fillRect(x + (blockWidth - tabWidth) / 2, yStart - tabHeight, tabWidth, tabHeight);
         ctx.strokeRect(x + (blockWidth - tabWidth) / 2, yStart - tabHeight, tabWidth, tabHeight);
       }
-      
-      // Add node number if block is wide enough
       if (blockWidth > 20) {
         ctx.fillStyle = "#000000";
         ctx.font = "8px Inter, sans-serif";
@@ -86,55 +64,41 @@ function Timeline({ nodes, currentIndex, onClick }) {
         ctx.textBaseline = "middle";
         ctx.fillText((i + 1).toString(), x + blockWidth / 2, height / 2);
       }
-      
       x += blockWidth + padding;
     }
   }, [nodes, currentIndex, colors]);
-  
   useEffect(() => {
     drawTimeline();
-    
-    // Add resize listener
-    window.addEventListener('resize', drawTimeline);
-    return () => window.removeEventListener('resize', drawTimeline);
+    window.addEventListener("resize", drawTimeline);
+    return () => window.removeEventListener("resize", drawTimeline);
   }, [nodes, currentIndex, drawTimeline]);
-  
   const handleClick = (e) => {
     const canvas = canvasRef.current;
     if (!canvas || nodes.length === 0) return;
-    
     const rect = canvas.getBoundingClientRect();
     const x = e.clientX - rect.left;
     const width = canvas.clientWidth;
-    
     const totalChars = nodes.reduce((sum, node) => sum + node.character_count, 0) || nodes.length;
     const padding = 2;
     const minWidth = 10;
-    
     let cumulativeX = 0;
-    
     for (let i = 0; i < nodes.length; i++) {
       const blockWidth = Math.max(
         minWidth,
         (nodes[i].character_count / totalChars) * (width - nodes.length * padding)
       );
-      
       if (cumulativeX <= x && x < cumulativeX + blockWidth) {
         onClick(i);
         return;
       }
-      
       cumulativeX += blockWidth + padding;
     }
-    
-    // If click is beyond all blocks, select last node
     onClick(nodes.length - 1);
   };
-  
   return (
     <div className="timeline-container">
-      <canvas 
-        ref={canvasRef} 
+      <canvas
+        ref={canvasRef}
         className="timeline-canvas"
         onClick={handleClick}
       />
@@ -145,36 +109,25 @@ function Timeline({ nodes, currentIndex, onClick }) {
 function ReadingMode() {
   const { id } = useParams();
   const navigate = useNavigate();
-  
   const [cognition, setCognition] = useState(null);
   const [nodes, setNodes] = useState([]);
   const [currentNodeIndex, setCurrentNodeIndex] = useState(0);
-  const [synthesis, setSynthesis] = useState('');
+  const [synthesis, setSynthesis] = useState("");
   const [isLoading, setIsLoading] = useState(true);
   const [autoplayActive, setAutoplayActive] = useState(false);
   const [presetCategories, setPresetCategories] = useState({});
   const [error, setError] = useState(null);
-  const [speakText, setSpeakText] = useState('');
-  
+  const [voiceList, setVoiceList] = useState([]);
+  const [selectedVoiceIndex, setSelectedVoiceIndex] = useState(0);
+  const [speaking, setSpeaking] = useState(false);
+  const [speechRate, setSpeechRate] = useState(1.0);
+
   const synthesisRef = useRef(null);
   const autoplayTimerRef = useRef(null);
-  
-  // Use react-speech-kit's useSpeechSynthesis hook
-  const { speak, speaking, supported, voices, cancel } = useSpeechSynthesis({
-    onEnd: () => {
-      if (autoplayActive && currentNodeIndex < nodes.length - 1) {
-        // Move to next node after speech ends
-        autoplayTimerRef.current = setTimeout(() => {
-          setCurrentNodeIndex(prev => prev + 1);
-        }, 1000);
-      } else if (currentNodeIndex >= nodes.length - 1 && autoplayActive) {
-        // At the end, turn off autoplay
-        setAutoplayActive(false);
-      }
-    }
-  });
-  
-  // Fetch cognition and nodes
+  const lastNodeIndexRef = useRef(-1);
+  const { speak, cancel, supported, voices } = useSpeechSynthesis();
+
+  // --- Fetch cognition and nodes ---
   const fetchCognition = useCallback(async () => {
     try {
       setIsLoading(true);
@@ -183,317 +136,342 @@ function ReadingMode() {
       setCognition(response.data);
       setNodes(response.data.nodes || []);
       setIsLoading(false);
-    } catch (error) {
-      console.error('Error fetching cognition:', error);
-      setError('Failed to load cognition data');
+    } catch (err) {
+      setError("Failed to load cognition data");
       setIsLoading(false);
     }
   }, [id]);
-  
-  // Fetch preset responses
+
+  // --- Fetch preset responses ---
   const fetchPresetResponses = useCallback(async () => {
     try {
       setError(null);
-      const response = await axiosInstance.get('/preset-responses/by_category/');
+      const response = await axiosInstance.get("/preset-responses/by_category/");
       setPresetCategories(response.data);
-    } catch (error) {
-      console.error('Error fetching preset responses:', error);
+    } catch (err) {
+      // ignore
     }
   }, []);
-  
-  // Save synthesis for a node
-  const saveSynthesis = useCallback(async (nodeIndex) => {
-    if (nodeIndex < 0 || nodeIndex >= nodes.length) return;
-    
-    const node = nodes[nodeIndex];
-    
-    try {
-      await axiosInstance.post('/syntheses/add_or_update/', {
-        node_id: node.id,
-        content: synthesis
-      });
-    } catch (error) {
-      console.error('Error saving synthesis:', error);
+
+  // --- Save synthesis for a node ---
+  const saveSynthesis = useCallback(
+    async (nodeIndex) => {
+      if (nodeIndex < 0 || nodeIndex >= nodes.length) return;
+      const node = nodes[nodeIndex];
+      try {
+        await axiosInstance.post("/syntheses/add_or_update/", {
+          node_id: node.id,
+          content: synthesis,
+        });
+      } catch (err) {
+        // ignore
+      }
+    },
+    [nodes, synthesis]
+  );
+
+  // --- Load voices using voiceschanged event ---
+  useEffect(() => {
+    let mounted = true;
+    function updateVoices() {
+      if (!window.speechSynthesis) return;
+      const allVoices = window.speechSynthesis.getVoices();
+      const en = allVoices.filter(v => v.lang.toLowerCase().startsWith("en")).slice(0,2);
+      const mx = allVoices.filter(v => v.lang.toLowerCase() === "es-mx").slice(0,2);
+      const v = [...en, ...mx];
+      if (mounted) setVoiceList(v);
     }
-  }, [nodes, synthesis]);
-  
-  // Initial data loading
+    updateVoices();
+    window.speechSynthesis?.addEventListener("voiceschanged", updateVoices);
+    // fallback: update after a short delay
+    const t = setTimeout(updateVoices, 500);
+    return () => {
+      mounted = false;
+      window.speechSynthesis?.removeEventListener("voiceschanged", updateVoices);
+      clearTimeout(t);
+    };
+  }, []);
+
+  // --- Select default voice when loaded ---
+  useEffect(() => {
+    if (voiceList.length > 0) {
+      // Prefer English voice, fallback to first
+      let idx = voiceList.findIndex(
+        (v) => v.lang && v.lang.toLowerCase().startsWith("en")
+      );
+      if (idx === -1) idx = 0;
+      setSelectedVoiceIndex(idx);
+    }
+  }, [voiceList]);
+
+  // --- Initial load ---
   useEffect(() => {
     fetchCognition();
     fetchPresetResponses();
-    
-    // Cleanup timers on unmount
+    if (window.speechSynthesis) window.speechSynthesis.getVoices();
     return () => {
-      if (autoplayTimerRef.current) {
-        clearTimeout(autoplayTimerRef.current);
-      }
+      if (autoplayTimerRef.current) clearTimeout(autoplayTimerRef.current);
+      cancel();
     };
-  }, [fetchCognition, fetchPresetResponses]);
-  
-  // Update speaking text when node changes
+    // eslint-disable-next-line
+  }, [id]);
+
+  // --- Update synthesis textarea when node changes ---
   useEffect(() => {
-    if (nodes.length > 0 && currentNodeIndex >= 0 && currentNodeIndex < nodes.length) {
-      setSpeakText(nodes[currentNodeIndex].content || '');
+    if (nodes.length && currentNodeIndex >= 0 && currentNodeIndex < nodes.length) {
+      setSynthesis(nodes[currentNodeIndex]?.synthesis?.content || "");
+    } else {
+      setSynthesis("");
     }
   }, [nodes, currentNodeIndex]);
-  
-  // Save synthesis when navigating away from a node
-  const lastNodeIndexRef = useRef(-1);
+
+  // --- Save synthesis when leaving node ---
   useEffect(() => {
-    // Save synthesis of last node
-    if (lastNodeIndexRef.current >= 0 && lastNodeIndexRef.current < nodes.length) {
+    if (
+      lastNodeIndexRef.current >= 0 &&
+      lastNodeIndexRef.current < nodes.length &&
+      lastNodeIndexRef.current !== currentNodeIndex
+    ) {
       saveSynthesis(lastNodeIndexRef.current);
     }
-    
-    // Update lastNodeIndexRef with current node
     lastNodeIndexRef.current = currentNodeIndex;
-    
-    // Load synthesis for current node
-    if (nodes[currentNodeIndex]?.synthesis) {
-      setSynthesis(nodes[currentNodeIndex].synthesis.content || '');
-    } else {
-      setSynthesis('');
-    }
-    
-    // Stop any ongoing speech when changing nodes manually
     cancel();
-    
-    // If autoplay is active, start reading the new node after a short delay
+    // Auto-play when cell changes
+    setTimeout(() => handleReadCurrentNode(), 50);
     if (autoplayActive) {
       autoplayTimerRef.current = setTimeout(() => {
-        readCurrentNode();
+        handleReadCurrentNode();
       }, 300);
     }
-  }, [currentNodeIndex, nodes, saveSynthesis, autoplayActive, cancel]);
-  
-  // Effect to handle autoplay activation
+    // eslint-disable-next-line
+  }, [currentNodeIndex]);
+
+  // --- Handle autoplay ---
   useEffect(() => {
     if (autoplayActive && !speaking && nodes.length > 0) {
       autoplayTimerRef.current = setTimeout(() => {
-        readCurrentNode();
+        handleReadCurrentNode();
       }, 300);
     }
-    
     return () => {
-      if (autoplayTimerRef.current) {
-        clearTimeout(autoplayTimerRef.current);
-      }
+      if (autoplayTimerRef.current) clearTimeout(autoplayTimerRef.current);
     };
+    // eslint-disable-next-line
   }, [autoplayActive, speaking, nodes]);
-  
-  // Read the current node
-  const readCurrentNode = () => {
-    if (currentNodeIndex >= 0 && currentNodeIndex < nodes.length) {
-      const nodeText = nodes[currentNodeIndex].content || '';
-      
-      if (nodeText.trim()) {
-        // Select a good voice if available
-        let selectedVoice = null;
-        
-        if (voices && voices.length > 0) {
-          // Try to find a male English voice
-          selectedVoice = voices.find(voice => 
-            voice.lang.includes('en') && 
-            (voice.name.includes('Male') || 
-             voice.name.includes('David') || 
-             voice.name.includes('Google UK English Male'))
-          );
-          
-          // If no male voice found, use any English voice
-          if (!selectedVoice) {
-            selectedVoice = voices.find(voice => voice.lang.includes('en'));
-          }
-          
-          // If still no voice, use the first available
-          if (!selectedVoice && voices.length > 0) {
-            selectedVoice = voices[0];
-          }
-        }
-        
-        // Clean up text to ensure better speech
-        const cleanText = nodeText
-          .replace(/[#*_`~+=[\]{}()<>|\\/@%^&$]/g, ' ')
-          .replace(/\s+/g, ' ')
-          .trim();
-        
-        // Speak with the selected voice
-        speak({ 
-          text: cleanText,
-          voice: selectedVoice
-        });
-      } else if (autoplayActive && currentNodeIndex < nodes.length - 1) {
-        // If node has no content and autoplay is active, move to next node
-        setCurrentNodeIndex(prev => prev + 1);
-      }
-    }
-  };
-  
-  // Stop speech
-  const stopSpeech = () => {
-    cancel();
-    if (autoplayTimerRef.current) {
-      clearTimeout(autoplayTimerRef.current);
-      autoplayTimerRef.current = null;
-    }
-  };
-  
-  // Keyboard events
+
+  // --- Keyboard navigation ---
   useEffect(() => {
     const handleKeyDown = (e) => {
-      // Ignore if user is typing in a text field
-      if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
-        return;
-      }
-      
+      if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
       switch (e.key) {
-        case 'ArrowLeft':
+        case "ArrowLeft":
           e.preventDefault();
           if (currentNodeIndex > 0) {
-            stopSpeech();
-            setCurrentNodeIndex(prevIndex => prevIndex - 1);
+            handleStopSpeech();
+            setCurrentNodeIndex((i) => i - 1);
           }
           break;
-        case 'ArrowRight':
+        case "ArrowRight":
           e.preventDefault();
           if (currentNodeIndex < nodes.length - 1) {
-            stopSpeech();
-            setCurrentNodeIndex(prevIndex => prevIndex + 1);
+            handleStopSpeech();
+            setCurrentNodeIndex((i) => i + 1);
           }
           break;
-        case 'ArrowUp':
+        case "ArrowUp":
           e.preventDefault();
-          readCurrentNode();
+          handleReadCurrentNode();
           break;
-        case 'ArrowDown':
+        case "ArrowDown":
           e.preventDefault();
-          stopSpeech();
+          handleStopSpeech();
+          break;
+        case " ":
+          e.preventDefault();
+          handleToggleAutoplay();
           break;
         default:
           break;
       }
     };
-    
-    document.addEventListener('keydown', handleKeyDown);
-    return () => document.removeEventListener('keydown', handleKeyDown);
-  }, [currentNodeIndex, nodes.length]);
-  
-  // Navigation functions
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+    // eslint-disable-next-line
+  }, [currentNodeIndex, nodes.length, autoplayActive]);
+
+  // --- Speech Synthesis Logic ---
+  const handleReadCurrentNode = useCallback(() => {
+    if (!voiceList.length || !supported) return;
+    if (currentNodeIndex >= 0 && currentNodeIndex < nodes.length) {
+      const nodeText = nodes[currentNodeIndex]?.content || "";
+      const cleanText = nodeText
+        .replace(/[#*_`~+=[\]{}()<>|\\/@%^&$]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (cleanText) {
+        try {
+          window.speechSynthesis.cancel();
+          setTimeout(() => {
+            setSpeaking(true);
+            speak({
+              text: cleanText,
+              voice: voiceList[selectedVoiceIndex],
+              rate: speechRate,
+              pitch: 1.0,
+              volume: 1.0,
+              onend: () => {
+                setSpeaking(false);
+                if (!autoplayActive) cancel();
+                if (autoplayActive && currentNodeIndex < nodes.length - 1) {
+                  setCurrentNodeIndex((i) => i + 1);
+                } else if (autoplayActive && currentNodeIndex >= nodes.length - 1) {
+                  setAutoplayActive(false);
+                }
+              },
+              onerror: (err) => {
+                setSpeaking(false);
+                setError("Speech synthesis error: " + (err?.message || "Unknown error"));
+                setAutoplayActive(false);
+              },
+            });
+          }, 50);
+        } catch (err) {
+          setSpeaking(false);
+          setError("Speech error: " + (err?.message || "Unknown error"));
+          setAutoplayActive(false);
+        }
+      } else if (autoplayActive && currentNodeIndex < nodes.length - 1) {
+        setCurrentNodeIndex((i) => i + 1);
+      }
+    }
+    // eslint-disable-next-line
+  }, [voiceList, selectedVoiceIndex, currentNodeIndex, nodes, supported, autoplayActive, speak, speechRate, cancel]);
+
+  const handleStopSpeech = useCallback(() => {
+    try {
+      window.speechSynthesis.cancel();
+      cancel();
+      setSpeaking(false);
+      if (autoplayTimerRef.current) {
+        clearTimeout(autoplayTimerRef.current);
+        autoplayTimerRef.current = null;
+      }
+    } catch (err) {}
+  }, [cancel]);
+
+  // --- Navigation ---
   const goToNextNode = () => {
     if (currentNodeIndex < nodes.length - 1) {
-      stopSpeech();
-      setCurrentNodeIndex(prevIndex => prevIndex + 1);
+      handleStopSpeech();
+      setCurrentNodeIndex((i) => i + 1);
+      setTimeout(() => handleReadCurrentNode(), 50);
     }
   };
-  
   const goToPreviousNode = () => {
     if (currentNodeIndex > 0) {
-      stopSpeech();
-      setCurrentNodeIndex(prevIndex => prevIndex - 1);
+      handleStopSpeech();
+      setCurrentNodeIndex((i) => i - 1);
+      setTimeout(() => handleReadCurrentNode(), 50);
     }
   };
-  
-  // Toggle autoplay
-  const toggleAutoplay = () => {
+  const handleTimelineClick = (index) => {
+    saveSynthesis(currentNodeIndex);
+    handleStopSpeech();
+    setCurrentNodeIndex(index);
+    setTimeout(() => handleReadCurrentNode(), 50);
+  };
+  const handleReturnHome = () => {
+    saveSynthesis(currentNodeIndex);
+    handleStopSpeech();
+    navigate("/");
+  };
+  const handleSynthesisChange = (e) => setSynthesis(e.target.value);
+  const handleVoiceChange = (e) => setSelectedVoiceIndex(Number(e.target.value));
+  const handleToggleAutoplay = () => {
     if (autoplayActive) {
-      stopSpeech();
+      handleStopSpeech();
       setAutoplayActive(false);
     } else {
       setAutoplayActive(true);
+      // Start reading immediately when autoplay is enabled
+      setTimeout(() => handleReadCurrentNode(), 50);
     }
   };
-  
-  // Toggle node illumination
-  const toggleIllumination = async () => {
+  const handleToggleIllumination = async () => {
     if (nodes.length === 0 || currentNodeIndex >= nodes.length) return;
-    
     try {
       const node = nodes[currentNodeIndex];
-      const response = await axiosInstance.post(`/nodes/${node.id}/toggle_illumination/`);
-      
-      // Update nodes array with the updated node
+      const response = await axiosInstance.post(
+        `/nodes/${node.id}/toggle_illumination/`
+      );
       const updatedNodes = [...nodes];
       updatedNodes[currentNodeIndex] = {
         ...node,
-        is_illuminated: response.data.is_illuminated
+        is_illuminated: response.data.is_illuminated,
       };
       setNodes(updatedNodes);
-    } catch (error) {
-      console.error('Error toggling illumination:', error);
+    } catch (err) {
+      // ignore
     }
   };
-  
-  const handleReturnHome = () => {
-    // Save current synthesis before leaving
-    saveSynthesis(currentNodeIndex);
-    stopSpeech();
-    navigate('/');
-  };
-  
-  const handleTimelineClick = (index) => {
-    // Save current synthesis before navigating
-    saveSynthesis(currentNodeIndex);
-    stopSpeech();
-    setCurrentNodeIndex(index);
-  };
-  
-  const handleSynthesisChange = (e) => {
-    setSynthesis(e.target.value);
-  };
-  
-  // Preset response handling
-  const addPresetResponse = async (presetId) => {
-    if (!presetId || presetId === '') return;
-    
+  const handleTestSpeech = () => {
+    if (!voiceList.length || !supported) return;
     try {
-      setError(null);
-      
-      // Create a synthesis first if it doesn't exist
+      setSpeaking(true);
+      speak({
+        text: "This is a test of the speech synthesis",
+        voice: voiceList[selectedVoiceIndex],
+        rate: speechRate,
+        pitch: 1.0,
+        volume: 1.0,
+        onend: () => setSpeaking(false),
+        onerror: () => setSpeaking(false),
+      });
+    } catch (err) {
+      setSpeaking(false);
+      setError("Test speech error: " + (err?.message || "Unknown error"));
+    }
+  };
+  // --- Preset response handling ---
+  const addPresetResponse = async (presetId) => {
+    if (!presetId) return;
+    try {
       if (!nodes[currentNodeIndex]?.synthesis?.id) {
-        await axiosInstance.post('/syntheses/add_or_update/', {
+        await axiosInstance.post("/syntheses/add_or_update/", {
           node_id: nodes[currentNodeIndex].id,
-          content: synthesis
+          content: synthesis,
         });
       }
-      
-      // Now get fresh data to ensure we have the synthesis ID
       await fetchCognition();
-      
-      // Get the synthesis ID from the updated data
       const synthId = nodes[currentNodeIndex]?.synthesis?.id;
-      if (!synthId) {
-        console.error('No synthesis ID available after creation');
-        return;
-      }
-      
-      // Add the preset to the synthesis
+      if (!synthId) return;
       await axiosInstance.post(`/syntheses/${synthId}/add_preset/`, {
-        preset_id: presetId
+        preset_id: presetId,
       });
-      
-      // Refresh to show updated synthesis
       await fetchCognition();
-    } catch (error) {
-      console.error('Error adding preset response:', error);
-    }
+    } catch (err) {}
   };
-  
-  // Show warning if speech synthesis is not supported
+
+  // --- Error for unsupported speech synthesis ---
   useEffect(() => {
     if (!supported) {
-      console.warn('Speech synthesis is not supported in this browser');
+      setError(
+        "Speech synthesis is not supported in this browser. Please try Chrome, Edge, or Safari."
+      );
+    } else {
+      setError(null);
     }
   }, [supported]);
-  
+
   if (isLoading) {
     return <div className="reading-mode-loading">Loading...</div>;
   }
-  
   if (!cognition) {
     return <div className="reading-mode-error">Could not load cognition</div>;
   }
-  
   const currentNode = nodes[currentNodeIndex] || null;
-  
+  const speechSynthesisReady = supported && voiceList.length > 0;
+
   return (
     <div className="reading-mode-container">
       <div className="reading-mode-split-layout">
@@ -502,25 +480,32 @@ function ReadingMode() {
           <div className="node-info">
             <div className="title-row">
               <div className="cognition-title">{cognition.title}</div>
-              <button onClick={handleReturnHome} className="home-btn" title="Return to Home">Home</button>
+              <button
+                onClick={handleReturnHome}
+                className="home-btn"
+                title="Return to Home"
+              >
+                Home
+              </button>
             </div>
-            
             <div className="node-position">
               Node {currentNodeIndex + 1} of {nodes.length}
-              {speaking && <span className="reading-indicator"> (Reading...)</span>}
-              {!supported && <span className="error-message"> (Speech not supported in this browser)</span>}
+              {speaking && (
+                <span className="reading-indicator"> (Reading...)</span>
+              )}
+              {!speechSynthesisReady && (
+                <span className="error-message"> (Speech not available)</span>
+              )}
             </div>
-            
             <div className="timeline-wrapper">
-              <Timeline 
-                nodes={nodes} 
+              <Timeline
+                nodes={nodes}
                 currentIndex={currentNodeIndex}
-                onClick={handleTimelineClick} 
+                onClick={handleTimelineClick}
               />
             </div>
-            
             <div className="navigation-controls">
-              <button 
+              <button
                 onClick={goToPreviousNode}
                 disabled={currentNodeIndex <= 0 || isLoading}
                 className="nav-btn"
@@ -528,7 +513,7 @@ function ReadingMode() {
               >
                 ← Prev
               </button>
-              <button 
+              <button
                 onClick={goToNextNode}
                 disabled={currentNodeIndex >= nodes.length - 1 || isLoading}
                 className="nav-btn"
@@ -537,43 +522,98 @@ function ReadingMode() {
                 Next →
               </button>
             </div>
-            
+            <div className="voice-controls">
+              <div className="selector-group">
+                <label htmlFor="voice-select">Voice:</label>
+                <select
+                  id="voice-select"
+                  onChange={handleVoiceChange}
+                  disabled={!speechSynthesisReady}
+                  value={selectedVoiceIndex}
+                  className="voice-select"
+                >
+                  {voiceList.length > 0 ? (
+                    voiceList.map((voice, idx) => (
+                      <option key={idx} value={idx}>
+                        {voice.name} ({voice.lang})
+                      </option>
+                    ))
+                  ) : (
+                    <option value={0}>No voices available</option>
+                  )}
+                </select>
+              </div>
+              <div className="selector-group">
+                <label htmlFor="speed-select">Speed:</label>
+                <select
+                  id="speed-select"
+                  onChange={(e) => setSpeechRate(Number(e.target.value))}
+                  value={speechRate}
+                  className="voice-select"
+                >
+                  <option value={0.75}>Slow</option>
+                  <option value={1.0}>Normal</option>
+                  <option value={1.25}>Fast</option>
+                  <option value={1.5}>Faster</option>
+                </select>
+              </div>
+              <button
+                onClick={handleTestSpeech}
+                disabled={!speechSynthesisReady}
+                className="test-voice-btn"
+                title="Test Selected Voice"
+              >
+                Test Voice
+              </button>
+            </div>
             <div className="playback-controls">
-              <button 
-                onClick={readCurrentNode} 
-                disabled={speaking || isLoading || !supported}
+              <button
+                onClick={handleReadCurrentNode}
+                disabled={isLoading || !speechSynthesisReady}
                 className="control-btn"
                 title="Read Aloud (Up Arrow)"
               >
                 🔊 Read
               </button>
-              <button 
-                onClick={stopSpeech}
+              <button
+                onClick={handleStopSpeech}
                 disabled={!speaking}
                 className="control-btn"
                 title="Stop Reading (Down Arrow)"
               >
                 🔇 Stop
               </button>
-              <button 
-                onClick={toggleAutoplay}
-                disabled={isLoading || !supported}
-                className={`control-btn ${autoplayActive ? 'active' : ''}`}
-                title="Toggle Autoplay"
+              <button
+                onClick={handleToggleAutoplay}
+                disabled={isLoading || !speechSynthesisReady}
+                className={`control-btn ${autoplayActive ? "active" : ""}`}
+                title="Toggle Autoplay (Spacebar)"
               >
-                {autoplayActive ? '⏹ Stop' : '▶ Play'}
+                {autoplayActive ? "⏹ Stop" : "▶ Play"}
               </button>
-              <button 
-                onClick={toggleIllumination}
+              <button
+                onClick={handleToggleIllumination}
                 disabled={isLoading}
-                className={`control-btn ${currentNode?.is_illuminated ? 'active' : ''}`}
+                className={`control-btn ${
+                  currentNode?.is_illuminated ? "active" : ""
+                }`}
                 title="Toggle Illumination"
               >
-                {currentNode?.is_illuminated ? '★' : '☆'}
+                {currentNode?.is_illuminated ? "★" : "☆"}
               </button>
             </div>
+            {error && (
+              <div className="error-message">
+                {error}
+                <button
+                  onClick={() => setError(null)}
+                  className="dismiss-error-btn"
+                >
+                  Dismiss
+                </button>
+              </div>
+            )}
           </div>
-          
           <div className="synthesis-section">
             <textarea
               ref={synthesisRef}
@@ -582,21 +622,22 @@ function ReadingMode() {
               onChange={handleSynthesisChange}
               placeholder="Write your synthesis here..."
             />
-            
             <div className="preset-responses">
-              <select 
+              <select
                 onChange={(e) => {
                   if (e.target.value) {
                     addPresetResponse(e.target.value);
-                    e.target.value = ''; // Reset select after use
+                    e.target.value = "";
                   }
                 }}
                 defaultValue=""
               >
-                <option value="" disabled>Add a preset response...</option>
+                <option value="" disabled>
+                  Add a preset response...
+                </option>
                 {Object.entries(presetCategories).map(([category, presets]) => (
                   <optgroup key={category} label={category}>
-                    {presets.map(preset => (
+                    {presets.map((preset) => (
                       <option key={preset.id} value={preset.id}>
                         {preset.title}
                       </option>
@@ -605,16 +646,13 @@ function ReadingMode() {
                 ))}
               </select>
             </div>
-            
-            {error && <div className="error-message">{error}</div>}
           </div>
         </div>
-        
         {/* Right Side - Content Display */}
         <div className="reading-mode-content-panel">
           <div className="node-container">
             <div className="node-content">
-              {currentNode ? currentNode.content : 'No content available'}
+              {currentNode ? currentNode.content : "No content available"}
             </div>
           </div>
         </div>
@@ -624,3 +662,12 @@ function ReadingMode() {
 }
 
 export default ReadingMode;
+
+/* Minimal CSS for selector-group for inline-flex and margin */
+// (If you don't use CSS-in-JS, add this to ReadingMode.css)
+// .selector-group {
+//   display: inline-flex;
+//   align-items: center;
+//   margin-right: 12px;
+//   gap: 4px;
+// }
