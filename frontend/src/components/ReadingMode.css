@@ -193,22 +193,53 @@
   box-shadow: 0 0 0 1px rgba(74, 134, 232, 0.1);
 }
 
-.preset-responses {
+
+.preset-responses-tags {
   margin-bottom: 0.75rem;
 }
 
-.preset-responses select {
-  width: 100%;
-  padding: 0.5rem;
+.preset-scroll-box {
   border: 1px solid var(--border-color);
+  padding: 0.5rem;
   border-radius: 4px;
-  font-size: 0.8rem;
-  cursor: pointer;
+  max-height: 150px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
-.preset-responses select:focus {
-  outline: none;
-  border-color: var(--accent-color);
+.preset-tag {
+  margin-bottom: 0.5rem;
+  padding: 0.5rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  background: var(--accent-color);
+  color: #fff;
+  cursor: pointer;
+  transition: background 0.2s, color 0.2s, border 0.2s;
+  text-align: left;
+}
+
+.preset-tag.active {
+  background: #fff;
+  color: var(--accent-color);
+  border: 1px solid var(--accent-color);
+}
+
+.associated-presets {
+  margin-top: 0.75rem;
+}
+
+.preset-block-title {
+  font-weight: 600;
+  margin-bottom: 0.25rem;
+}
+
+.preset-block-content {
+  font-size: 0.9rem;
+  color: #444;
+  line-height: 1.3;
 }
 
 .error-message {

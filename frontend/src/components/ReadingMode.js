@@ -452,23 +452,21 @@ function ReadingMode() {
     }
   };
   // --- Preset response handling ---
-  const addPresetResponse = async (presetId) => {
-    if (!presetId) return;
+  const togglePresetResponse = async (presetId) => {
+    const node = nodes[currentNodeIndex];
+    if (!node?.synthesis?.id) return;
+    const synthId = node.synthesis.id;
+    const isSelected = node.synthesis.presets?.some(p => p.id === presetId);
     try {
-      if (!nodes[currentNodeIndex]?.synthesis?.id) {
-        await axiosInstance.post("/syntheses/add_or_update/", {
-          node_id: nodes[currentNodeIndex].id,
-          content: synthesis,
-        });
+      if (isSelected) {
+        await axiosInstance.post(`/syntheses/${synthId}/remove_preset/`, { preset_id: presetId });
+      } else {
+        await axiosInstance.post(`/syntheses/${synthId}/add_preset/`, { preset_id: presetId });
       }
       await fetchCognition();
-      const synthId = nodes[currentNodeIndex]?.synthesis?.id;
-      if (!synthId) return;
-      await axiosInstance.post(`/syntheses/${synthId}/add_preset/`, {
-        preset_id: presetId,
-      });
-      await fetchCognition();
-    } catch (err) {}
+    } catch (err) {
+      console.error("Preset toggle error:", err);
+    }
   };
 
   // --- Error for unsupported speech synthesis ---
@@ -641,30 +639,36 @@ function ReadingMode() {
               onChange={handleSynthesisChange}
               placeholder="Write your synthesis here..."
             />
-            <div className="preset-responses">
-              <select
-                onChange={(e) => {
-                  if (e.target.value) {
-                    addPresetResponse(e.target.value);
-                    e.target.value = "";
-                  }
-                }}
-                defaultValue=""
-              >
-                <option value="" disabled>
-                  Add a preset response...
-                </option>
-                {Object.entries(presetCategories).map(([category, presets]) => (
-                  <optgroup key={category} label={category}>
-                    {presets.map((preset) => (
-                      <option key={preset.id} value={preset.id}>
+            <div className="preset-responses-tags">
+              <div className="preset-scroll-box">
+                {Object.entries(presetCategories).map(([category, presets]) =>
+                  presets.map((preset) => {
+                    const isSelected = currentNode?.synthesis?.presets?.some(p => p.id === preset.id);
+                    return (
+                      <button
+                        key={preset.id}
+                        onClick={() => togglePresetResponse(preset.id)}
+                        className={`preset-tag ${isSelected ? "active" : ""}`}
+                      >
                         {preset.title}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </select>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
             </div>
+            {currentNode?.synthesis?.presets?.length > 0 && (
+              <div className="associated-presets">
+                <div className="preset-scroll-box">
+                  {currentNode.synthesis.presets.map((preset, index) => (
+                    <div key={index} className="preset-block">
+                      <div className="preset-block-title">{preset.title}</div>
+                      <div className="preset-block-content">{preset.content}</div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
         {/* Right Side - Content Display */}

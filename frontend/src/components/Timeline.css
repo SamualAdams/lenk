@@ -1,154 +1,71 @@
-/* Timeline.css - Styles for the timeline component */
+/* Timeline.css - Enhanced styles for the timeline component */
 
 .timeline-container {
-    height: 60px;
-    width: 100%;
-    margin-bottom: 1rem;
-    position: relative;
+  height: 50px;
+  width: 100%;
+  margin: 0.75rem 0;
+  position: relative;
+  overflow: visible;
+}
+
+.timeline-canvas {
+  width: 100%;
+  height: 100%;
+  border-radius: 8px;
+  background-color: #f5f5f5;
+  cursor: pointer;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+  transition: all 0.2s ease;
+}
+
+.timeline-canvas:hover {
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.1);
+}
+
+/* Legend for timeline (optional) */
+.timeline-legend {
+  display: flex;
+  gap: 1rem;
+  margin-top: 0.5rem;
+  font-size: 0.75rem;
+  color: #666;
+}
+
+.legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.legend-color {
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.legend-color.normal {
+  background-color: #d0d0d0;
+}
+
+.legend-color.current {
+  background-color: #4a86e8;
+}
+
+.legend-color.illuminated {
+  background-color: #f1c232;
+}
+
+.legend-color.synthesis {
+  background-color: #8ab4f8;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .timeline-container {
+    height: 40px;
   }
   
-  .timeline-canvas {
-    width: 100%;
-    height: 100%;
-    border: 1px solid var(--border-color);
-    border-radius: 6px;
-    background-color: #f5f5f5;
-    cursor: pointer;
-    transition: border-color 0.2s ease;
-  }
-  
-  .timeline-canvas:hover {
-    border-color: var(--accent-color);
-  }
-  
-  /* Labels for timeline sections */
-  .timeline-labels {
-    display: flex;
-    justify-content: space-between;
-    margin-top: 0.25rem;
-    font-size: 0.7rem;
-    color: var(--secondary-color);
-  }
-  
-  .timeline-label {
-    position: relative;
-    text-align: center;
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    height: 100%;
-  }
-  
-  /* Node markers */
-  .node-marker {
-    position: absolute;
-    top: -12px;
-    transform: translateX(-50%);
-    width: 1px;
-    height: 6px;
-    background-color: var(--border-color);
-  }
-  
-  /* Interactive tooltips */
-  .timeline-tooltip {
-    position: absolute;
-    bottom: 100%;
-    transform: translateX(-50%);
-    background-color: white;
-    border: 1px solid var(--border-color);
-    border-radius: 4px;
-    padding: 0.5rem;
-    font-size: 0.8rem;
-    pointer-events: none;
-    opacity: 0;
-    transition: opacity 0.2s ease;
-    z-index: 10;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-    white-space: nowrap;
-  }
-  
-  .timeline-container:hover .timeline-tooltip {
-    opacity: 1;
-  }
-  
-  /* Current position indicator */
-  .current-position {
-    position: absolute;
-    top: 0;
-    bottom: 0;
-    width: 2px;
-    background-color: var(--accent-color);
-    z-index: 5;
-  }
-  
-  /* Illuminated section styling (will be drawn on canvas) */
-  .illuminated-section {
-    position: absolute;
-    height: 100%;
-    background-color: rgba(241, 194, 50, 0.3);
-    border-left: 1px solid rgba(241, 194, 50, 0.8);
-    border-right: 1px solid rgba(241, 194, 50, 0.8);
-    z-index: 2;
-  }
-  
-  /* Synthesis marker styling (will be drawn on canvas) */
-  .synthesis-marker {
-    position: absolute;
-    top: -4px;
-    width: 12px;
-    height: 12px;
-    background-color: var(--accent-color);
-    border-radius: 50%;
-    border: 2px solid white;
-    transform: translateX(-50%);
-    z-index: 6;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.15);
-  }
-  
-  /* Timeline legend */
   .timeline-legend {
-    display: flex;
-    gap: 1rem;
-    margin-top: 0.5rem;
-    font-size: 0.75rem;
-    color: var(--secondary-color);
+    display: none;
   }
-  
-  .legend-item {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-  
-  .legend-color {
-    width: 10px;
-    height: 10px;
-    border-radius: 2px;
-  }
-  
-  .legend-color.normal {
-    background-color: #cccccc;
-  }
-  
-  .legend-color.current {
-    background-color: var(--accent-color);
-  }
-  
-  .legend-color.illuminated {
-    background-color: #f1c232;
-  }
-  
-  .legend-color.synthesis {
-    background-color: #8ab4f8;
-  }
-  
-  /* Responsive adjustments */
-  @media (max-width: 768px) {
-    .timeline-container {
-      height: 40px;
-    }
-    
-    .timeline-tooltip {
-      display: none;
-    }
-  }
+}
