@@ -540,8 +540,7 @@ function ReadingMode() {
               </button>
             </div>
             <div className="voice-controls">
-              <div className="selector-group">
-                <label htmlFor="voice-select">Voice:</label>
+              <div className="selector-group horizontal mb-2">
                 <select
                   id="voice-select"
                   onChange={handleVoiceChange}
@@ -559,14 +558,11 @@ function ReadingMode() {
                     <option value={0}>No voices available</option>
                   )}
                 </select>
-              </div>
-              <div className="selector-group">
-                <label htmlFor="speed-select">Speed:</label>
                 <select
                   id="speed-select"
                   onChange={(e) => setSpeechRate(Number(e.target.value))}
                   value={speechRate}
-                  className="voice-select"
+                  className="voice-select horizontal-select"
                 >
                   <option value={0.75}>Slow</option>
                   <option value={1.0}>Normal</option>
@@ -574,14 +570,6 @@ function ReadingMode() {
                   <option value={1.5}>Faster</option>
                 </select>
               </div>
-              <button
-                onClick={handleTestSpeech}
-                disabled={!speechSynthesisReady}
-                className="test-voice-btn"
-                title="Test Selected Voice"
-              >
-                Test Voice
-              </button>
             </div>
             <div className="playback-controls">
               <button

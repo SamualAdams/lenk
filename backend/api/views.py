@@ -233,3 +233,79 @@ class PresetResponseViewSet(viewsets.ModelViewSet):
 class ArcViewSet(viewsets.ModelViewSet):
     queryset = Arc.objects.all()
     serializer_class = ArcSerializer
+
+# Add this method to the CognitionViewSet in api/views.py
+@action(detail=True, methods=['post'])
+def append_text(self, request, pk=None):
+    cognition = self.get_object()
+    new_text = request.data.get('text', '')
+    
+    if not new_text.strip():
+        return Response(
+            {'error': 'No text provided to append'}, 
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    
+    # Append the new text to the existing raw_content with a separator
+    separator = "\n\n"
+    if not cognition.raw_content.endswith('\n'):
+        separator = "\n\n"
+    
+    # Update the raw_content field
+    cognition.raw_content += separator + new_text
+    cognition.save()
+    
+    # Get the current highest node position
+    last_position = 0
+    if cognition.nodes.exists():
+        last_position = cognition.nodes.order_by('-position').first().position
+    
+    # Process only the new text into paragraphs/nodes
+    paragraphs = [p.strip() for p in re.split(r'\n\n+', new_text) if p.strip()]
+    
+    # If we have very few paragraphs, try splitting by single newlines
+    if len(paragraphs) <= 1:
+        paragraphs = [p.strip() for p in new_text.split('\n') if p.strip()]
+        
+        # If still few paragraphs, try splitting by sentences
+        if len(paragraphs) <= 3:
+            sentences = re.split(r'\.(?=\s)', new_text)
+            paragraphs = []
+            current_para = []
+            
+            for sentence in sentences:
+                sentence = sentence.strip()
+                if not sentence:
+                    continue
+                
+                if not sentence.endswith(('.', '?', '!', ':', ';')):
+                    if len(sentence) > 30 or any(p in sentence for p in ',.;:?!'):
+                        sentence += '.'
+                
+                current_para.append(sentence)
+                # Create new paragraph every 3-5 sentences
+                if len(current_para) >= 3 + (hash(sentence) % 3):
+                    paragraphs.append(' '.join(current_para))
+                    current_para = []
+            
+            # Add remaining sentences
+            if current_para:
+                paragraphs.append(' '.join(current_para))
+    
+    # Create new nodes starting after the last position
+    new_nodes = []
+    for i, paragraph in enumerate(paragraphs):
+        new_node = Node.objects.create(
+            cognition=cognition,
+            content=paragraph,
+            position=last_position + 1 + i,
+            character_count=len(paragraph)
+        )
+        new_nodes.append(new_node)
+    
+    return Response({
+        'status': 'success',
+        'raw_content_updated': True,
+        'nodes_added': len(new_nodes),
+        'new_total_nodes': cognition.nodes.count()
+    })
