@@ -121,6 +121,9 @@ function ReadingMode() {
   const [selectedVoiceIndex, setSelectedVoiceIndex] = useState(0);
   const [speaking, setSpeaking] = useState(false);
   const [speechRate, setSpeechRate] = useState(1.0);
+  const [expandMode, setExpandMode] = useState(false);
+  const [newText, setNewText] = useState('');
+  const [appendingText, setAppendingText] = useState(false);
 
   const synthesisRef = useRef(null);
   const autoplayTimerRef = useRef(null);
@@ -256,25 +259,30 @@ function ReadingMode() {
     lastNodeIndexRef.current = currentNodeIndex;
     cancel();
     // Auto-play when cell changes
-    setTimeout(() => handleReadCurrentNode(), 50);
-    if (autoplayActive) {
-      autoplayTimerRef.current = setTimeout(() => {
-        handleReadCurrentNode();
-      }, 300);
-    }
+    handleReadCurrentNode();
     // eslint-disable-next-line
   }, [currentNodeIndex]);
 
   // --- Handle autoplay ---
   useEffect(() => {
     if (autoplayActive && !speaking && nodes.length > 0) {
+      // Clear any existing timer
+      if (autoplayTimerRef.current) {
+        clearTimeout(autoplayTimerRef.current);
+        autoplayTimerRef.current = null;
+      }
+      
+      // Set new timer with a small delay
       autoplayTimerRef.current = setTimeout(() => {
         handleReadCurrentNode();
-      }, 300);
+      }, 100);
+    } else {
+      // Clear timer if autoplay is disabled or we're speaking
+      if (autoplayTimerRef.current) {
+        clearTimeout(autoplayTimerRef.current);
+        autoplayTimerRef.current = null;
+      }
     }
-    return () => {
-      if (autoplayTimerRef.current) clearTimeout(autoplayTimerRef.current);
-    };
     // eslint-disable-next-line
   }, [autoplayActive, speaking, nodes]);
 
@@ -400,8 +408,6 @@ function ReadingMode() {
     setTimeout(() => handleReadCurrentNode(), 50);
   };
   const handleReturnHome = () => {
-    saveSynthesis(currentNodeIndex);
-    handleStopSpeech();
     navigate("/");
   };
   const handleSynthesisChange = (e) => setSynthesis(e.target.value);
@@ -480,6 +486,41 @@ function ReadingMode() {
     }
   }, [supported]);
 
+  const handleAppendText = async () => {
+    if (!newText.trim()) {
+      setError("Please enter some text to append");
+      return;
+    }
+    
+    try {
+      setAppendingText(true);
+      setError(null);
+      
+      const response = await axiosInstance.post(`/cognitions/${id}/append_text/`, {
+        text: newText
+      });
+      
+      console.log('Text appended successfully:', response.data);
+      
+      // Refresh the cognition data to get the new nodes
+      await fetchCognition();
+      
+      // Reset the expand mode and text
+      setNewText('');
+      setExpandMode(false);
+      setAppendingText(false);
+      
+      // Navigate to the first of the newly added nodes
+      const newNodeIndex = nodes.length; // This will be the index of the first new node
+      setCurrentNodeIndex(newNodeIndex);
+      
+    } catch (err) {
+      console.error('Error appending text:', err);
+      setError('Failed to append text to cognition. Please try again.');
+      setAppendingText(false);
+    }
+  };
+
   if (isLoading) {
     return <div className="reading-mode-loading">Loading...</div>;
   }
@@ -491,19 +532,67 @@ function ReadingMode() {
 
   return (
     <div className="reading-mode-container">
+      {expandMode && (
+        <div className="expand-modal-overlay">
+          <div className="expand-modal">
+            <div className="expand-modal-header">
+              <h3>Append Text to "{cognition?.title || 'Cognition'}"</h3>
+              <button 
+                className="close-btn" 
+                onClick={() => setExpandMode(false)}
+              >
+                ×
+              </button>
+            </div>
+            <div className="expand-modal-body">
+              <textarea
+                className="expand-textarea"
+                value={newText}
+                onChange={(e) => setNewText(e.target.value)}
+                placeholder="Paste or type additional text to append to this cognition..."
+                rows={10}
+              />
+            </div>
+            <div className="expand-modal-footer">
+              <button 
+                className="cancel-btn"
+                onClick={() => setExpandMode(false)}
+              >
+                Cancel
+              </button>
+              <button
+                className="append-btn"
+                onClick={handleAppendText}
+                disabled={appendingText || !newText.trim()}
+              >
+                {appendingText ? "Appending..." : "Append Text"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="reading-mode-split-layout">
         {/* Left Side - Controls and Synthesis */}
         <div className="reading-mode-controls-panel">
           <div className="node-info">
             <div className="title-row">
-              <div className="cognition-title">{cognition.title}</div>
-              <button
-                onClick={handleReturnHome}
-                className="home-btn"
-                title="Return to Home"
-              >
-                Home
-              </button>
+              <div className="cognition-title">{cognition?.title}</div>
+              <div className="title-buttons">
+                <button
+                  onClick={() => setExpandMode(true)}
+                  className="expand-btn"
+                  title="Expand Cognition"
+                >
+                  Expand
+                </button>
+                <button
+                  onClick={handleReturnHome}
+                  className="home-btn"
+                  title="Return to Home"
+                >
+                  Home
+                </button>
+              </div>
             </div>
             <div className="node-position">
               Node {currentNodeIndex + 1} of {nodes.length}
@@ -627,24 +716,7 @@ function ReadingMode() {
               onChange={handleSynthesisChange}
               placeholder="Write your synthesis here..."
             />
-            <div className="preset-responses-tags">
-              <div className="preset-scroll-box">
-                {Object.entries(presetCategories).map(([category, presets]) =>
-                  presets.map((preset) => {
-                    const isSelected = currentNode?.synthesis?.presets?.some(p => p.id === preset.id);
-                    return (
-                      <button
-                        key={preset.id}
-                        onClick={() => togglePresetResponse(preset.id)}
-                        className={`preset-tag ${isSelected ? "active" : ""}`}
-                      >
-                        {preset.title}
-                      </button>
-                    );
-                  })
-                )}
-              </div>
-            </div>
+
             {currentNode?.synthesis?.presets?.length > 0 && (
               <div className="associated-presets">
                 <div className="preset-scroll-box">
