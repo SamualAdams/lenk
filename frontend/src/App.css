@@ -1,9 +1,14 @@
 :root {
-  --primary-color: #333;
-  --secondary-color: #666;
-  --accent-color: #4a86e8;
-  --background-color: #fff;
-  --border-color: #eaeaea;
-  --hover-color: #f5f9ff;
-  --box-shadow: 0 2px 8px rgba(0, 0, 0, 0.05);
+  --primary-color: #e0e0e0;
+  --secondary-color: #a0a0a0;
+  --accent-color: #5f9eff;
+  --background-color: #1a1a1a;
+  --border-color: #333333;
+  --hover-color: #2a2a2a;
+  --box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25);
+  --text-color: #e0e0e0;
+  --card-background: #222222;
+  --danger-color: #ff5757;
+  --success-color: #4caf50;
+  --input-background: #2c2c2c;
 }

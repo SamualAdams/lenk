@@ -1,7 +1,7 @@
-import './InputMode.css';
 import React, { useState, useEffect } from 'react';
-import { useNavigate } from 'react-router-dom';
-import axiosInstance from '../axiosConfig'; // Import custom axios instance
+import { useNavigate, Link } from 'react-router-dom';
+import axiosInstance from '../axiosConfig';
+import './InputMode.css';
 
 function InputMode() {
   const [cognitions, setCognitions] = useState([]);
@@ -9,6 +9,7 @@ function InputMode() {
   const [title, setTitle] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [success, setSuccess] = useState(null);
   const navigate = useNavigate();
 
   // Load saved cognitions on component mount
@@ -32,20 +33,21 @@ function InputMode() {
 
   const handleCreateCognition = async () => {
     if (!title.trim()) {
-      alert('Please enter a title for your cognition');
+      setError('Please enter a title for your cognition');
       return;
     }
 
     if (!rawContent.trim()) {
-      alert('Please enter or upload some content to process');
+      setError('Please enter or upload some content to process');
       return;
     }
 
     try {
       setIsLoading(true);
       setError(null);
+      setSuccess(null);
       
-      // Use the regular endpoint, not the custom create endpoint
+      // Create the cognition
       console.log('Creating cognition with:', { title, raw_content: rawContent });
       const cognitionResponse = await axiosInstance.post('/cognitions/', {
           title: title,
@@ -53,6 +55,7 @@ function InputMode() {
       });
       
       console.log('Cognition created:', cognitionResponse.data);
+      setSuccess('Cognition created successfully!');
       
       // Process the text into nodes
       console.log('Processing text for cognition:', cognitionResponse.data.id);
@@ -62,7 +65,22 @@ function InputMode() {
       navigate(`/cognition/${cognitionResponse.data.id}`);
     } catch (error) {
       console.error('Error creating cognition:', error);
-      setError('Failed to create cognition. Please try again.');
+      let errorMessage = 'Failed to create cognition. Please try again.';
+      
+      if (error.response) {
+        // The request was made and the server responded with a status code
+        // that falls out of the range of 2xx
+        if (error.response.data && error.response.data.error) {
+          errorMessage = error.response.data.error;
+        } else if (error.response.status === 413) {
+          errorMessage = 'The text is too large. Please try with a smaller document.';
+        }
+      } else if (error.request) {
+        // The request was made but no response was received
+        errorMessage = 'No response from server. Please check your connection.';
+      }
+      
+      setError(errorMessage);
       setIsLoading(false);
     }
   };
@@ -71,20 +89,34 @@ function InputMode() {
     const file = event.target.files[0];
     if (!file) return;
 
+    if (file.size > 1024 * 1024 * 2) { // 2MB limit
+      setError('File size exceeds 2MB limit. Please choose a smaller file.');
+      event.target.value = null; // Clear the file input
+      return;
+    }
+
     const reader = new FileReader();
     reader.onload = (e) => {
       setRawContent(e.target.result);
       // Set default title from filename
       setTitle(file.name.replace(/\.[^/.]+$/, ""));
+      setError(null); // Clear any previous errors
+    };
+    reader.onerror = () => {
+      setError('Error reading file. Please try again.');
     };
     reader.readAsText(file);
   };
 
-  const handleDeleteCognition = async (id) => {
+  const handleDeleteCognition = async (id, e) => {
+    e.preventDefault(); // Prevent navigation
+    e.stopPropagation(); // Prevent event bubbling
+    
     if (window.confirm('Are you sure you want to delete this cognition?')) {
       try {
         setError(null);
         await axiosInstance.delete(`/cognitions/${id}/`);
+        setSuccess('Cognition deleted successfully!');
         fetchCognitions();
       } catch (error) {
         console.error('Error deleting cognition:', error);
@@ -99,20 +131,20 @@ function InputMode() {
         <div className="sidebar">
           <h2>Saved Cognitions</h2>
           {isLoading && !cognitions.length ? (
-            <p>Loading cognitions...</p>
-          ) : error ? (
+            <div className="loading">Loading cognitions...</div>
+          ) : error && !cognitions.length ? (
             <p className="error-message">{error}</p>
           ) : cognitions.length === 0 ? (
-            <p>No saved cognitions found.</p>
+            <p className="empty-message">No saved cognitions found.</p>
           ) : (
             <ul className="cognition-list">
               {cognitions.map(cognition => (
                 <li key={cognition.id}>
-                  <a href={`/cognition/${cognition.id}`}>{cognition.title}</a>
+                  <Link to={`/cognition/${cognition.id}`}>{cognition.title}</Link>
                   <span className="node-count">({cognition.nodes_count || 0} nodes)</span>
                   <button 
                     className="delete-btn" 
-                    onClick={() => handleDeleteCognition(cognition.id)}
+                    onClick={(e) => handleDeleteCognition(cognition.id, e)}
                     aria-label={`Delete ${cognition.title}`}
                   >
                     Delete
@@ -150,7 +182,7 @@ function InputMode() {
               Browse File
               <input 
                 type="file" 
-                accept=".txt,.md,.text" 
+                accept=".txt,.md,.text,.doc,.docx" 
                 onChange={handleFileUpload} 
                 hidden 
               />
@@ -165,6 +197,14 @@ function InputMode() {
           </div>
           
           {error && <p className="error-message">{error}</p>}
+          {success && <p className="success-message">{success}</p>}
+          
+          {isLoading && (
+            <div className="loading-indicator">
+              <div className="spinner"></div>
+              <p>Processing your text... This may take a moment.</p>
+            </div>
+          )}
         </div>
       </div>
     </div>

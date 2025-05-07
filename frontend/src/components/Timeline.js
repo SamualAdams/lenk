@@ -4,22 +4,22 @@ import './Timeline.css';
 function Timeline({ nodes, currentIndex, onClick }) {
   const canvasRef = useRef(null);
   
-  // Enhanced color palette for better visual hierarchy
+  // Dark mode color palette
   const colors = {
-    normal: "#d0d0d0",
-    current: "#4a86e8",
+    normal: "#555555",
+    current: "#5f9eff",
     illuminated: "#f1c232",
     current_illuminated: "#e69138",
-    border: "#e0e0e0",
-    bg: "#f5f5f5",
-    synthesis_tab: "#8ab4f8",
-    text: "#333333",
+    border: "#333333",
+    bg: "#161616",
+    synthesis_tab: "#5f7fbf",
+    text: "#e0e0e0",
     textLight: "#ffffff"
   };
   
   const drawTimeline = useCallback(() => {
     const canvas = canvasRef.current;
-    if (!canvas || nodes.length === 0) return;
+    if (!canvas || !nodes || nodes.length === 0) return;
     
     const ctx = canvas.getContext('2d');
     const width = canvas.clientWidth;
@@ -76,7 +76,7 @@ function Timeline({ nodes, currentIndex, onClick }) {
       ctx.lineTo(x + blockWidth, blockY + blockHeight - cornerRadius);
       ctx.quadraticCurveTo(x + blockWidth, blockY + blockHeight, x + blockWidth - cornerRadius, blockY + blockHeight);
       ctx.lineTo(x + cornerRadius, blockY + blockHeight);
-      ctx.quadraticCurveTo(x, blockY + blockHeight, 0, blockY + blockHeight - cornerRadius);
+      ctx.quadraticCurveTo(x, blockY + blockHeight, x, blockY + blockHeight - cornerRadius); // Fixed this line!
       ctx.lineTo(x, blockY + cornerRadius);
       ctx.quadraticCurveTo(x, blockY, x + cornerRadius, blockY);
       ctx.closePath();
@@ -108,6 +108,14 @@ function Timeline({ nodes, currentIndex, onClick }) {
         ctx.fill();
       }
       
+      // Add node number for larger blocks
+      if (blockWidth > 20) {
+        ctx.fillStyle = colors.text;
+        ctx.font = "8px Inter, sans-serif";
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText((i + 1).toString(), x + blockWidth / 2, blockY + blockHeight / 2);
+      }
       
       x += blockWidth + padding;
     }
@@ -123,7 +131,7 @@ function Timeline({ nodes, currentIndex, onClick }) {
   
   const handleClick = (e) => {
     const canvas = canvasRef.current;
-    if (!canvas || nodes.length === 0) return;
+    if (!canvas || !nodes || nodes.length === 0) return;
     
     const rect = canvas.getBoundingClientRect();
     const clickX = e.clientX - rect.left;
