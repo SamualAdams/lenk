@@ -29,14 +29,15 @@ class NodeSerializer(serializers.ModelSerializer):
         model = Node
         fields = ['id', 'content', 'position', 'character_count', 
                  'is_illuminated', 'created_at', 'synthesis']
+        read_only_fields = ['synthesis', 'id', 'created_at']
 
 class CognitionSerializer(serializers.ModelSerializer):
     nodes_count = serializers.SerializerMethodField()
     
     class Meta:
         model = Cognition
-        fields = ['id', 'title', 'raw_content', 'created_at', 
-                 'updated_at', 'nodes_count']
+        fields = ['id', 'title', 'raw_content', 'is_starred', 'created_at',
+                  'updated_at', 'nodes_count']
     
     def get_nodes_count(self, obj):
         return obj.nodes.count()

@@ -31,6 +31,33 @@ def create_cognition(request):
     return Response(serializer.data, status=status.HTTP_201_CREATED)
 
 class CognitionViewSet(viewsets.ModelViewSet):
+    @action(detail=True, methods=['post'])
+    def star(self, request, pk=None):
+        cognition = self.get_object()
+        cognition.is_starred = not cognition.is_starred
+        cognition.save()
+        return Response({
+            'status': 'success',
+            'starred': cognition.is_starred
+        })
+    @action(detail=True, methods=['post'])
+    def duplicate(self, request, pk=None):
+        original = self.get_object()
+        duplicated = Cognition.objects.create(raw_content=original.raw_content)
+
+        for node in original.nodes.all():
+            Node.objects.create(
+                cognition=duplicated,
+                content=node.content,
+                position=node.position,
+                character_count=node.character_count,
+                is_illuminated=node.is_illuminated,
+            )
+
+        return Response({
+            'status': 'success',
+            'duplicated_cognition_id': duplicated.id
+        }, status=status.HTTP_201_CREATED)
     queryset = Cognition.objects.all().order_by('-created_at')
     permission_classes = [permissions.AllowAny]  # Explicitly set permissions
     
@@ -183,7 +210,13 @@ class CognitionViewSet(viewsets.ModelViewSet):
 class NodeViewSet(viewsets.ModelViewSet):
     queryset = Node.objects.all()
     serializer_class = NodeSerializer
-    
+    http_method_names = ['get', 'post', 'patch', 'delete']
+
+    def destroy(self, request, *args, **kwargs):
+        node = self.get_object()
+        node.delete()
+        return Response({'status': 'deleted'}, status=status.HTTP_204_NO_CONTENT)
+
     @action(detail=True, methods=['post'])
     def toggle_illumination(self, request, pk=None):
         node = self.get_object()

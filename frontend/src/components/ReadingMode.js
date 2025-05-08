@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useSpeechSynthesis } from "react-speech-kit";
+import { FaTrashAlt } from "react-icons/fa";
 import axiosInstance from "../axiosConfig";
 import "./ReadingMode.css";
 import Timeline from "./Timeline"; // Import the standalone Timeline component
@@ -24,6 +25,16 @@ function ReadingMode() {
   const [newText, setNewText] = useState('');
   const [appendingText, setAppendingText] = useState(false);
 
+  // --- Delete cognition handler ---
+  const handleDeleteCognition = async () => {
+    if (!window.confirm("Are you sure you want to delete this cognition?")) return;
+    try {
+      await axiosInstance.delete(`/cognitions/${id}/`);
+      navigate("/");
+    } catch (err) {
+      setError("Failed to delete cognition");
+    }
+  };
   const synthesisRef = useRef(null);
   const autoplayTimerRef = useRef(null);
   const lastNodeIndexRef = useRef(-1);
@@ -356,6 +367,22 @@ function ReadingMode() {
       setError("Test speech error: " + (err?.message || "Unknown error"));
     }
   };
+
+  // --- Copy to clipboard handlers ---
+  const handleCopyNode = () => {
+    if (currentNode) {
+      navigator.clipboard.writeText(currentNode.content);
+    }
+  };
+  const handleCopySynthesis = () => {
+    if (synthesis) {
+      navigator.clipboard.writeText(synthesis);
+    }
+  };
+  const handleCopyBoth = () => {
+    const text = `${currentNode?.content || ""}\n\n${synthesis}`;
+    navigator.clipboard.writeText(text);
+  };
   // --- Preset response handling ---
   const togglePresetResponse = async (presetId) => {
     const node = nodes[currentNodeIndex];
@@ -491,6 +518,13 @@ function ReadingMode() {
                 >
                   Home
                 </button>
+                <button
+                  onClick={handleDeleteCognition}
+                  className="delete-btn"
+                  title="Delete Cognition"
+                >
+                  <FaTrashAlt />
+                </button>
               </div>
             </div>
             <div className="node-position">
@@ -546,17 +580,15 @@ function ReadingMode() {
                     <option value={0}>No voices available</option>
                   )}
                 </select>
-                <select
-                  id="speed-select"
-                  onChange={(e) => setSpeechRate(Number(e.target.value))}
+                <input
+                  type="range"
+                  min="0.5"
+                  max="4"
+                  step="0.05"
                   value={speechRate}
-                  className="voice-select horizontal-select"
-                >
-                  <option value={0.75}>Slow</option>
-                  <option value={1.0}>Normal</option>
-                  <option value={1.25}>Fast</option>
-                  <option value={1.5}>Faster</option>
-                </select>
+                  onChange={(e) => setSpeechRate(Number(e.target.value))}
+                  className="speech-rate-slider"
+                />
               </div>
             </div>
             <div className="playback-controls">
@@ -632,9 +664,31 @@ function ReadingMode() {
         </div>
         {/* Right Side - Content Display */}
         <div className="reading-mode-content-panel">
-          <div className="node-container">
-            <div className="node-content">
-              {currentNode ? currentNode.content : "No content available"}
+          <div className="content-wrapper">
+            <div className="node-container">
+              <div className="node-content">
+                {currentNode ? currentNode.content : "No content available"}
+              </div>
+            </div>
+            <div className="copy-buttons">
+              <button
+                onClick={handleCopyNode}
+                className="copy-btn copy-node-btn"
+                title="Copy Node"
+                aria-label="Copy Node"
+              ></button>
+              <button
+                onClick={handleCopyBoth}
+                className="copy-btn copy-both-btn"
+                title="Copy Both"
+                aria-label="Copy Both"
+              ></button>
+              <button
+                onClick={handleCopySynthesis}
+                className="copy-btn copy-synthesis-btn"
+                title="Copy Synthesis"
+                aria-label="Copy Synthesis"
+              ></button>
             </div>
           </div>
         </div>

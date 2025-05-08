@@ -4,6 +4,7 @@ from django.db import models
 class Cognition(models.Model):
     title = models.CharField(max_length=200)
     raw_content = models.TextField(help_text="The original, unprocessed text")
+    is_starred = models.BooleanField(default=False, help_text="Indicates if this cognition is starred for quick access")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     # user = models.ForeignKey(User, on_delete=models.CASCADE)  # For future auth implementation

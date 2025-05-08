@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axiosInstance from '../axiosConfig';
 import './InputMode.css';
+import { FaStar, FaRegStar, FaTrashAlt, FaCopy } from 'react-icons/fa';
 
 function InputMode() {
   const [cognitions, setCognitions] = useState([]);
@@ -125,6 +126,50 @@ function InputMode() {
     }
   };
 
+  const handleDuplicateCognition = async (id, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      setError(null);
+      const response = await axiosInstance.post(`/cognitions/${id}/duplicate/`);
+      setSuccess('Cognition duplicated successfully!');
+      fetchCognitions();
+    } catch (error) {
+      console.error('Error duplicating cognition:', error);
+      setError('Failed to duplicate cognition. Please try again.');
+    }
+  };
+
+  const handleStarCognition = async (id, e) => {
+    e.preventDefault();
+    e.stopPropagation();
+    try {
+      setError(null);
+      // Optimistically update the is_starred status
+      setCognitions(prev =>
+        prev.map(c =>
+          c.id === id ? { ...c, is_starred: !c.is_starred } : c
+        )
+      );
+      const response = await axiosInstance.post(`/cognitions/${id}/star/`);
+      const updated = response.data.starred;
+      // Update with the actual value from the server, in case of mismatch
+      setCognitions(prev =>
+        prev.map(c =>
+          c.id === id ? { ...c, is_starred: updated } : c
+        )
+      );
+      setSuccess(`Cognition ${updated ? 'starred' : 'unstarred'}`);
+    } catch (error) {
+      console.error('Error starring cognition:', error);
+      setError('Failed to update star status.');
+    }
+  };
+
+  // Split cognitions into starred and unstarred
+  const starredCognitions = cognitions.filter(c => c.is_starred);
+  const unstarredCognitions = cognitions.filter(c => !c.is_starred);
+
   return (
     <div className="input-mode">
       <div className="container">
@@ -137,24 +182,44 @@ function InputMode() {
           ) : cognitions.length === 0 ? (
             <p className="empty-message">No saved cognitions found.</p>
           ) : (
-            <ul className="cognition-list">
-              {cognitions.map(cognition => (
-                <li key={cognition.id}>
-                  <Link to={`/cognition/${cognition.id}`}>{cognition.title}</Link>
-                  <span className="node-count">({cognition.nodes_count || 0} nodes)</span>
-                  <button 
-                    className="delete-btn" 
-                    onClick={(e) => handleDeleteCognition(cognition.id, e)}
-                    aria-label={`Delete ${cognition.title}`}
-                  >
-                    Delete
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <>
+              <div className="starred-pane">
+                <h3>Starred</h3>
+                <ul className="cognition-list">
+                  {starredCognitions.map(cognition => (
+                    <li key={cognition.id} className="cognition-item">
+                      <div className="cognition-row">
+                        <Link to={`/cognition/${cognition.id}`} className="cognition-title">{cognition.title}</Link>
+                        <div className="button-group">
+                          <button className="delete-btn" onClick={(e) => handleDeleteCognition(cognition.id, e)} aria-label={`Delete ${cognition.title}`}><FaTrashAlt /></button>
+                          <button className="duplicate-btn" onClick={(e) => handleDuplicateCognition(cognition.id, e)} aria-label={`Duplicate ${cognition.title}`}><FaCopy /></button>
+                          <button className="template-btn" data-starred={cognition.is_starred} onClick={(e) => handleStarCognition(cognition.id, e)} aria-label={`Toggle star for ${cognition.title}`}>{cognition.is_starred ? <FaStar /> : <FaRegStar />}</button>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+              <div className="unstarred-pane">
+                <h3>All Cognitions</h3>
+                <ul className="cognition-list">
+                  {unstarredCognitions.map(cognition => (
+                    <li key={cognition.id} className="cognition-item">
+                      <div className="cognition-row">
+                        <Link to={`/cognition/${cognition.id}`} className="cognition-title">{cognition.title}</Link>
+                        <div className="button-group">
+                          <button className="delete-btn" onClick={(e) => handleDeleteCognition(cognition.id, e)} aria-label={`Delete ${cognition.title}`}><FaTrashAlt /></button>
+                          <button className="duplicate-btn" onClick={(e) => handleDuplicateCognition(cognition.id, e)} aria-label={`Duplicate ${cognition.title}`}><FaCopy /></button>
+                          <button className="template-btn" data-starred={cognition.is_starred} onClick={(e) => handleStarCognition(cognition.id, e)} aria-label={`Toggle star for ${cognition.title}`}>{cognition.is_starred ? <FaStar /> : <FaRegStar />}</button>
+                        </div>
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            </>
           )}
         </div>
-        
         <div className="main-content">
           <div className="input-header">
             <h2>Create New Cognition</h2>
