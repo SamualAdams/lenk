@@ -24,11 +24,11 @@ class SynthesisSerializer(serializers.ModelSerializer):
 
 class NodeSerializer(serializers.ModelSerializer):
     synthesis = SynthesisSerializer(read_only=True)
-    
+
     class Meta:
         model = Node
-        fields = ['id', 'content', 'position', 'character_count', 
-                 'is_illuminated', 'created_at', 'synthesis']
+        fields = ['id', 'cognition', 'content', 'position', 'character_count',
+                  'is_illuminated', 'created_at', 'synthesis']
         read_only_fields = ['synthesis', 'id', 'created_at']
 
 class CognitionSerializer(serializers.ModelSerializer):

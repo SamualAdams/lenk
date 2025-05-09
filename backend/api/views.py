@@ -342,3 +342,20 @@ class PresetResponseViewSet(viewsets.ModelViewSet):
 class ArcViewSet(viewsets.ModelViewSet):
     queryset = Arc.objects.all()
     serializer_class = ArcSerializer
+@api_view(['POST'])
+@csrf_exempt
+@permission_classes([AllowAny])
+def add_or_update_node(request):
+    node_id = request.data.get("node_id")
+    content = request.data.get("content")
+
+    if not node_id:
+        return Response({'error': 'node_id is required'}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        node = Node.objects.get(id=node_id)
+        node.content = content or ''
+        node.save()
+        return Response(NodeSerializer(node).data)
+    except Node.DoesNotExist:
+        return Response({'error': 'Node not found'}, status=status.HTTP_404_NOT_FOUND)

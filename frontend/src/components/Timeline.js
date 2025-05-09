@@ -65,22 +65,9 @@ function Timeline({ nodes, currentIndex, onClick }) {
         color = isIlluminated ? colors.illuminated : colors.normal;
       }
       
-      // Draw main block with rounded corners
+      // Draw main block as a simple rectangle (no rounded corners)
       ctx.fillStyle = color;
-      
-      // Path for rounded rectangle
-      ctx.beginPath();
-      ctx.moveTo(x + cornerRadius, blockY);
-      ctx.lineTo(x + blockWidth - cornerRadius, blockY);
-      ctx.quadraticCurveTo(x + blockWidth, blockY, x + blockWidth, blockY + cornerRadius);
-      ctx.lineTo(x + blockWidth, blockY + blockHeight - cornerRadius);
-      ctx.quadraticCurveTo(x + blockWidth, blockY + blockHeight, x + blockWidth - cornerRadius, blockY + blockHeight);
-      ctx.lineTo(x + cornerRadius, blockY + blockHeight);
-      ctx.quadraticCurveTo(x, blockY + blockHeight, x, blockY + blockHeight - cornerRadius); // Fixed this line!
-      ctx.lineTo(x, blockY + cornerRadius);
-      ctx.quadraticCurveTo(x, blockY, x + cornerRadius, blockY);
-      ctx.closePath();
-      ctx.fill();
+      ctx.fillRect(x, blockY, blockWidth, blockHeight);
       
       // Draw subtle border
       if (i === currentIndex) {
@@ -91,21 +78,10 @@ function Timeline({ nodes, currentIndex, onClick }) {
       
       // Draw synthesis tab if node has synthesis
       if (hasSynthesis) {
-        const tabWidth = Math.min(blockWidth - 4, 12);
-        const tabX = x + (blockWidth - tabWidth) / 2;
-        
-        // Draw tab with rounded top corners
+        const tabX = x;
+        const tabY = blockY - tabHeight - tabYOffset;
         ctx.fillStyle = colors.synthesis_tab;
-        ctx.beginPath();
-        ctx.moveTo(tabX + cornerRadius, blockY - tabHeight - tabYOffset);
-        ctx.lineTo(tabX + tabWidth - cornerRadius, blockY - tabHeight - tabYOffset);
-        ctx.quadraticCurveTo(tabX + tabWidth, blockY - tabHeight - tabYOffset, tabX + tabWidth, blockY - tabHeight - tabYOffset + cornerRadius);
-        ctx.lineTo(tabX + tabWidth, blockY - tabYOffset);
-        ctx.lineTo(tabX, blockY - tabYOffset);
-        ctx.lineTo(tabX, blockY - tabHeight - tabYOffset + cornerRadius);
-        ctx.quadraticCurveTo(tabX, blockY - tabHeight - tabYOffset, tabX + cornerRadius, blockY - tabHeight - tabYOffset);
-        ctx.closePath();
-        ctx.fill();
+        ctx.fillRect(tabX, tabY, blockWidth, tabHeight);
       }
       
       // Add node number for larger blocks
@@ -114,7 +90,6 @@ function Timeline({ nodes, currentIndex, onClick }) {
         ctx.font = "8px Inter, sans-serif";
         ctx.textAlign = "center";
         ctx.textBaseline = "middle";
-        ctx.fillText((i + 1).toString(), x + blockWidth / 2, blockY + blockHeight / 2);
       }
       
       x += blockWidth + padding;

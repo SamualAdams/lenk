@@ -7,6 +7,7 @@ from . import views
 urlpatterns = [
     path('hello/', views.hello_world, name='hello_world'),
     path('cognitions/create/', views.create_cognition, name='create_cognition'),
+    path('nodes/add_or_update/', views.add_or_update_node, name='add_or_update_node'),
 ]
 
 # Then add router URLs

@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import debounce from 'lodash.debounce';
 import { useParams, useNavigate } from "react-router-dom";
 import { useSpeechSynthesis } from "react-speech-kit";
-import { FaTrashAlt } from "react-icons/fa";
+import { FaTrashAlt, FaHome, FaExpandArrowsAlt, FaCheck, FaCopy } from "react-icons/fa";
 import axiosInstance from "../axiosConfig";
 import "./ReadingMode.css";
 import Timeline from "./Timeline"; // Import the standalone Timeline component
@@ -24,6 +25,58 @@ function ReadingMode() {
   const [expandMode, setExpandMode] = useState(false);
   const [newText, setNewText] = useState('');
   const [appendingText, setAppendingText] = useState(false);
+
+  const [copiedNode, setCopiedNode] = useState(false);
+  const [copiedSynthesis, setCopiedSynthesis] = useState(false);
+  const [copiedBoth, setCopiedBoth] = useState(false);
+
+  const currentNode = nodes[currentNodeIndex] || null;
+
+  // --- State for editing node content ---
+  const [nodeText, setNodeText] = useState("");
+  // --- Sync nodeText with current node, but avoid overwriting unsaved edits ---
+  useEffect(() => {
+    const newContent = currentNode?.content || "";
+    if (newContent !== nodeText) {
+      setNodeText(newContent);
+    }
+  }, [currentNode]);
+
+  // --- Debounced autosave for node content ---
+  const debouncedSave = useCallback(
+    debounce(async (text) => {
+      if (!currentNode) return;
+      try {
+        console.log("Saving node via POST:", currentNode.id, text);
+        const response = await axiosInstance.post("/nodes/add_or_update/", {
+          node_id: currentNode.id,
+          content: text
+        });
+        setNodes((nodes) =>
+          nodes.map((n, idx) =>
+            idx === currentNodeIndex ? { ...n, content: text } : n
+          )
+        );
+      } catch (err) {
+        console.error("Debounced save node error (POST):", err);
+      }
+    }, 1000),
+    [currentNode, currentNodeIndex]
+  );
+
+  // cancel debounce on unmount
+  useEffect(() => {
+    return () => {
+      debouncedSave.cancel();
+    };
+  }, [debouncedSave]);
+
+  // handle textarea changes with debounced save
+  const handleNodeChange = (e) => {
+    const text = e.target.value;
+    setNodeText(text);
+    debouncedSave(text);
+  };
 
   // --- Delete cognition handler ---
   const handleDeleteCognition = async () => {
@@ -297,22 +350,25 @@ function ReadingMode() {
   }, [cancel]);
 
   // --- Navigation ---
-  const goToNextNode = () => {
+  const goToNextNode = async () => {
     if (currentNodeIndex < nodes.length - 1) {
+      await fetchCognition();
       handleStopSpeech();
       setCurrentNodeIndex((i) => i + 1);
       setTimeout(() => handleReadCurrentNode(), 50);
     }
   };
-  const goToPreviousNode = () => {
+  const goToPreviousNode = async () => {
     if (currentNodeIndex > 0) {
+      await fetchCognition();
       handleStopSpeech();
       setCurrentNodeIndex((i) => i - 1);
       setTimeout(() => handleReadCurrentNode(), 50);
     }
   };
-  const handleTimelineClick = (index) => {
-    saveSynthesis(currentNodeIndex);
+  const handleTimelineClick = async (index) => {
+    await fetchCognition();
+    await saveSynthesis(currentNodeIndex);
     handleStopSpeech();
     setCurrentNodeIndex(index);
     setTimeout(() => handleReadCurrentNode(), 50);
@@ -372,16 +428,22 @@ function ReadingMode() {
   const handleCopyNode = () => {
     if (currentNode) {
       navigator.clipboard.writeText(currentNode.content);
+      setCopiedNode(true);
+      setTimeout(() => setCopiedNode(false), 1500);
     }
   };
   const handleCopySynthesis = () => {
     if (synthesis) {
       navigator.clipboard.writeText(synthesis);
+      setCopiedSynthesis(true);
+      setTimeout(() => setCopiedSynthesis(false), 1500);
     }
   };
   const handleCopyBoth = () => {
     const text = `${currentNode?.content || ""}\n\n${synthesis}`;
     navigator.clipboard.writeText(text);
+    setCopiedBoth(true);
+    setTimeout(() => setCopiedBoth(false), 1500);
   };
   // --- Preset response handling ---
   const togglePresetResponse = async (presetId) => {
@@ -447,13 +509,9 @@ function ReadingMode() {
     }
   };
 
-  if (isLoading) {
-    return <div className="reading-mode-loading">Loading...</div>;
-  }
   if (!cognition) {
     return <div className="reading-mode-error">Could not load cognition</div>;
   }
-  const currentNode = nodes[currentNodeIndex] || null;
   const speechSynthesisReady = supported && voiceList.length > 0;
 
   return (
@@ -508,33 +566,27 @@ function ReadingMode() {
                   onClick={() => setExpandMode(true)}
                   className="expand-btn"
                   title="Expand Cognition"
+                  aria-label="Expand Cognition"
                 >
-                  Expand
+                  <FaExpandArrowsAlt />
                 </button>
                 <button
                   onClick={handleReturnHome}
                   className="home-btn"
                   title="Return to Home"
+                  aria-label="Return to Home"
                 >
-                  Home
+                  <FaHome />
                 </button>
                 <button
                   onClick={handleDeleteCognition}
                   className="delete-btn"
                   title="Delete Cognition"
+                  aria-label="Delete Cognition"
                 >
                   <FaTrashAlt />
                 </button>
               </div>
-            </div>
-            <div className="node-position">
-              Node {currentNodeIndex + 1} of {nodes.length}
-              {speaking && (
-                <span className="reading-indicator"> (Reading...)</span>
-              )}
-              {!speechSynthesisReady && (
-                <span className="error-message"> (Speech not available)</span>
-              )}
             </div>
             <div className="timeline-wrapper">
               <Timeline
@@ -598,7 +650,7 @@ function ReadingMode() {
                 className="control-btn"
                 title="Read Aloud (Up Arrow)"
               >
-                🔊 Read
+                Read
               </button>
               <button
                 onClick={handleStopSpeech}
@@ -606,7 +658,7 @@ function ReadingMode() {
                 className="control-btn"
                 title="Stop Reading (Down Arrow)"
               >
-                🔇 Stop
+                Stop
               </button>
               <button
                 onClick={handleToggleAutoplay}
@@ -666,9 +718,12 @@ function ReadingMode() {
         <div className="reading-mode-content-panel">
           <div className="content-wrapper">
             <div className="node-container">
-              <div className="node-content">
-                {currentNode ? currentNode.content : "No content available"}
-              </div>
+              <textarea
+                className="node-textarea"
+                value={nodeText}
+                onChange={handleNodeChange}
+                placeholder="Edit the node content here..."
+              />
             </div>
             <div className="copy-buttons">
               <button
@@ -676,19 +731,25 @@ function ReadingMode() {
                 className="copy-btn copy-node-btn"
                 title="Copy Node"
                 aria-label="Copy Node"
-              ></button>
+              >
+                {copiedNode && <FaCheck />}
+              </button>
               <button
                 onClick={handleCopyBoth}
                 className="copy-btn copy-both-btn"
                 title="Copy Both"
                 aria-label="Copy Both"
-              ></button>
+              >
+                {copiedBoth && <FaCheck />}
+              </button>
               <button
                 onClick={handleCopySynthesis}
                 className="copy-btn copy-synthesis-btn"
                 title="Copy Synthesis"
                 aria-label="Copy Synthesis"
-              ></button>
+              >
+                {copiedSynthesis && <FaCheck />}
+              </button>
             </div>
           </div>
         </div>
