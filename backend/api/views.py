@@ -114,11 +114,33 @@ class CognitionViewSet(viewsets.ModelViewSet):
                 if current_para:
                     paragraphs.append(' '.join(current_para))
         
+        merged = []
+        skip_next = False
+        for i in range(len(paragraphs)):
+            if skip_next:
+                skip_next = False
+                continue
+            current = paragraphs[i].strip()
+            next_para = paragraphs[i + 1].strip() if i + 1 < len(paragraphs) else None
+            if (
+                len(current) < 60
+                and not re.search(r'[.!?;:]$', current)
+                and next_para
+            ):
+                merged.append(f"{current} {next_para}")
+                skip_next = True
+            else:
+                merged.append(current)
+        paragraphs = merged
+        
         # Delete existing nodes
         cognition.nodes.all().delete()
         
         # Create new nodes
         for i, paragraph in enumerate(paragraphs):
+            cleaned = re.sub(r'[^a-zA-Z0-9]', '', paragraph)
+            if not cleaned.strip():
+                continue
             Node.objects.create(
                 cognition=cognition,
                 content=paragraph,
@@ -188,9 +210,31 @@ class CognitionViewSet(viewsets.ModelViewSet):
                 if current_para:
                     paragraphs.append(' '.join(current_para))
         
+        merged = []
+        skip_next = False
+        for i in range(len(paragraphs)):
+            if skip_next:
+                skip_next = False
+                continue
+            current = paragraphs[i].strip()
+            next_para = paragraphs[i + 1].strip() if i + 1 < len(paragraphs) else None
+            if (
+                len(current) < 60
+                and not re.search(r'[.!?;:]$', current)
+                and next_para
+            ):
+                merged.append(f"{current} {next_para}")
+                skip_next = True
+            else:
+                merged.append(current)
+        paragraphs = merged
+        
         # Create new nodes starting after the last position
         new_nodes = []
         for i, paragraph in enumerate(paragraphs):
+            cleaned = re.sub(r'[^a-zA-Z0-9]', '', paragraph)
+            if not cleaned.strip():
+                continue
             new_node = Node.objects.create(
                 cognition=cognition,
                 content=paragraph,
