@@ -556,7 +556,7 @@ function ReadingMode() {
         </div>
       )}
       <div className="reading-mode-split-layout">
-        {/* Left Side - Controls and Synthesis */}
+        {/* Left Side - Controls only */}
         <div className="reading-mode-controls-panel">
           <div className="node-info">
             <div className="title-row">
@@ -588,13 +588,7 @@ function ReadingMode() {
                 </button>
               </div>
             </div>
-            <div className="timeline-wrapper">
-              <Timeline
-                nodes={nodes}
-                currentIndex={currentNodeIndex}
-                onClick={handleTimelineClick}
-              />
-            </div>
+            {/* Timeline and synthesis-section removed from here */}
             <div className="navigation-controls">
               <button
                 onClick={goToPreviousNode}
@@ -691,32 +685,10 @@ function ReadingMode() {
               </div>
             )}
           </div>
-          <div className="synthesis-section">
-            <textarea
-              ref={synthesisRef}
-              className="synthesis-textarea"
-              value={synthesis}
-              onChange={handleSynthesisChange}
-              placeholder="Write your synthesis here..."
-            />
-
-            {currentNode?.synthesis?.presets?.length > 0 && (
-              <div className="associated-presets">
-                <div className="preset-scroll-box">
-                  {currentNode.synthesis.presets.map((preset, index) => (
-                    <div key={index} className="preset-block">
-                      <div className="preset-block-title">{preset.title}</div>
-                      <div className="preset-block-content">{preset.content}</div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
         </div>
-        {/* Right Side - Content Display */}
+        {/* Right Side - Content Display, Synthesis, Timeline */}
         <div className="reading-mode-content-panel">
-          <div className="content-wrapper">
+          <div className="content-split-vertical">
             <div className="node-container">
               <textarea
                 className="node-textarea"
@@ -725,32 +697,62 @@ function ReadingMode() {
                 placeholder="Edit the node content here..."
               />
             </div>
-            <div className="copy-buttons">
-              <button
-                onClick={handleCopyNode}
-                className="copy-btn copy-node-btn"
-                title="Copy Node"
-                aria-label="Copy Node"
-              >
-                {copiedNode && <FaCheck />}
-              </button>
-              <button
-                onClick={handleCopyBoth}
-                className="copy-btn copy-both-btn"
-                title="Copy Both"
-                aria-label="Copy Both"
-              >
-                {copiedBoth && <FaCheck />}
-              </button>
-              <button
-                onClick={handleCopySynthesis}
-                className="copy-btn copy-synthesis-btn"
-                title="Copy Synthesis"
-                aria-label="Copy Synthesis"
-              >
-                {copiedSynthesis && <FaCheck />}
-              </button>
+            <div className="synthesis-and-timeline-container">
+              <div className="synthesis-section">
+                <textarea
+                  ref={synthesisRef}
+                  className="synthesis-textarea"
+                  value={synthesis}
+                  onChange={handleSynthesisChange}
+                  placeholder="Write your synthesis here..."
+                />
+                {currentNode?.synthesis?.presets?.length > 0 && (
+                  <div className="associated-presets">
+                    <div className="preset-scroll-box">
+                      {currentNode.synthesis.presets.map((preset, index) => (
+                        <div key={index} className="preset-block">
+                          <div className="preset-block-title">{preset.title}</div>
+                          <div className="preset-block-content">{preset.content}</div>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+              <div className="timeline-wrapper timeline-bottom">
+                <Timeline
+                  nodes={nodes}
+                  currentIndex={currentNodeIndex}
+                  onClick={handleTimelineClick}
+                />
+              </div>
             </div>
+          </div>
+          <div className="copy-buttons">
+            <button
+              onClick={handleCopyNode}
+              className="copy-btn copy-node-btn"
+              title="Copy Node"
+              aria-label="Copy Node"
+            >
+              {copiedNode && <FaCheck />}
+            </button>
+            <button
+              onClick={handleCopyBoth}
+              className="copy-btn copy-both-btn"
+              title="Copy Both"
+              aria-label="Copy Both"
+            >
+              {copiedBoth && <FaCheck />}
+            </button>
+            <button
+              onClick={handleCopySynthesis}
+              className="copy-btn copy-synthesis-btn"
+              title="Copy Synthesis"
+              aria-label="Copy Synthesis"
+            >
+              {copiedSynthesis && <FaCheck />}
+            </button>
           </div>
         </div>
       </div>
