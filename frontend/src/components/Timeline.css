@@ -1,4 +1,4 @@
-/* Timeline.css - Enhanced styles for the timeline component */
+/* Timeline.css - Polished styles for the timeline component */
 
 .timeline-container {
   height: 50px;
@@ -11,16 +11,15 @@
 .timeline-canvas {
   width: 100%;
   height: 100%;
-  background-color: #161616;
   cursor: pointer;
   border: none;
-  box-shadow: none;
+  border-radius: 4px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
   transition: all 0.2s ease;
-  border-radius: 0;
 }
 
 .timeline-canvas:hover {
-  box-shadow: none;
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.3);
 }
 
 /* Legend for timeline (optional) */
@@ -29,7 +28,7 @@
   gap: 1rem;
   margin-top: 0.5rem;
   font-size: 0.75rem;
-  color: var(--secondary-color);
+  color: #aaa;
 }
 
 .legend-item {
@@ -49,7 +48,7 @@
 }
 
 .legend-color.current {
-  background-color: var(--accent-color);
+  background-color: #5f9eff;
 }
 
 .legend-color.illuminated {

@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axiosInstance from '../axiosConfig';
 import './InputMode.css';
@@ -6,175 +6,106 @@ import { FaStar, FaRegStar, FaTrashAlt, FaCopy } from 'react-icons/fa';
 
 function InputMode() {
   const [cognitions, setCognitions] = useState([]);
-  const [rawContent, setRawContent] = useState('');
-  const [title, setTitle] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [error, setError] = useState(null);
-  const [success, setSuccess] = useState(null);
+  const [error, setError] = useState('');
+  const [uploading, setUploading] = useState(false);
   const navigate = useNavigate();
 
-  // Load saved cognitions on component mount
   useEffect(() => {
     fetchCognitions();
   }, []);
 
   const fetchCognitions = async () => {
+    setIsLoading(true);
+    setError('');
     try {
-      setIsLoading(true);
-      setError(null);
       const response = await axiosInstance.get('/cognitions/');
       setCognitions(response.data);
-      setIsLoading(false);
-    } catch (error) {
-      console.error('Error fetching cognitions:', error);
-      setError('Failed to load saved cognitions. Please refresh the page.');
-      setIsLoading(false);
-    }
-  };
-
-  const handleCreateCognition = async () => {
-    if (!title.trim()) {
-      setError('Please enter a title for your cognition');
-      return;
-    }
-
-    if (!rawContent.trim()) {
-      setError('Please enter or upload some content to process');
-      return;
-    }
-
-    try {
-      setIsLoading(true);
-      setError(null);
-      setSuccess(null);
-      
-      // Create the cognition
-      console.log('Creating cognition with:', { title, raw_content: rawContent });
-      const cognitionResponse = await axiosInstance.post('/cognitions/', {
-          title: title,
-          raw_content: rawContent
-      });
-      
-      console.log('Cognition created:', cognitionResponse.data);
-      setSuccess('Cognition created successfully!');
-      
-      // Process the text into nodes
-      console.log('Processing text for cognition:', cognitionResponse.data.id);
-      await axiosInstance.post(`/cognitions/${cognitionResponse.data.id}/process_text/`);
-      
-      // Navigate to reading mode using React Router
-      navigate(`/cognition/${cognitionResponse.data.id}`);
-    } catch (error) {
-      console.error('Error creating cognition:', error);
-      let errorMessage = 'Failed to create cognition. Please try again.';
-      
-      if (error.response) {
-        // The request was made and the server responded with a status code
-        // that falls out of the range of 2xx
-        if (error.response.data && error.response.data.error) {
-          errorMessage = error.response.data.error;
-        } else if (error.response.status === 413) {
-          errorMessage = 'The text is too large. Please try with a smaller document.';
-        }
-      } else if (error.request) {
-        // The request was made but no response was received
-        errorMessage = 'No response from server. Please check your connection.';
-      }
-      
-      setError(errorMessage);
+    } catch (err) {
+      setError('Failed to load cognitions.');
+    } finally {
       setIsLoading(false);
     }
-  };
-
-  const handleFileUpload = (event) => {
-    const file = event.target.files[0];
-    if (!file) return;
-
-    if (file.size > 1024 * 1024 * 2) { // 2MB limit
-      setError('File size exceeds 2MB limit. Please choose a smaller file.');
-      event.target.value = null; // Clear the file input
-      return;
-    }
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      setRawContent(e.target.result);
-      // Set default title from filename
-      setTitle(file.name.replace(/\.[^/.]+$/, ""));
-      setError(null); // Clear any previous errors
-    };
-    reader.onerror = () => {
-      setError('Error reading file. Please try again.');
-    };
-    reader.readAsText(file);
   };
 
   const handleDeleteCognition = async (id, e) => {
-    e.preventDefault(); // Prevent navigation
-    e.stopPropagation(); // Prevent event bubbling
-    
-    if (window.confirm('Are you sure you want to delete this cognition?')) {
-      try {
-        setError(null);
-        await axiosInstance.delete(`/cognitions/${id}/`);
-        setSuccess('Cognition deleted successfully!');
-        fetchCognitions();
-      } catch (error) {
-        console.error('Error deleting cognition:', error);
-        setError('Failed to delete cognition. Please try again.');
-      }
+    e.stopPropagation();
+    e.preventDefault();
+    if (!window.confirm('Are you sure you want to delete this cognition?')) return;
+    try {
+      await axiosInstance.delete(`/cognitions/${id}/`);
+      setCognitions(prev => prev.filter(c => c.id !== id));
+    } catch {
+      alert('Failed to delete cognition.');
     }
   };
 
   const handleDuplicateCognition = async (id, e) => {
-    e.preventDefault();
     e.stopPropagation();
+    e.preventDefault();
     try {
-      setError(null);
-      const response = await axiosInstance.post(`/cognitions/${id}/duplicate/`);
-      setSuccess('Cognition duplicated successfully!');
-      fetchCognitions();
-    } catch (error) {
-      console.error('Error duplicating cognition:', error);
-      setError('Failed to duplicate cognition. Please try again.');
+      const original = cognitions.find(c => c.id === id);
+      if (!original) return;
+      const duplicateData = { ...original };
+      delete duplicateData.id;
+      duplicateData.title = original.title + ' (Copy)';
+      const response = await axiosInstance.post('/cognitions/', duplicateData);
+      setCognitions(prev => [...prev, response.data]);
+    } catch {
+      alert('Failed to duplicate cognition.');
     }
   };
 
   const handleStarCognition = async (id, e) => {
-    e.preventDefault();
     e.stopPropagation();
+    e.preventDefault();
     try {
-      setError(null);
-      // Optimistically update the is_starred status
-      setCognitions(prev =>
-        prev.map(c =>
-          c.id === id ? { ...c, is_starred: !c.is_starred } : c
-        )
-      );
-      const response = await axiosInstance.post(`/cognitions/${id}/star/`);
-      const updated = response.data.starred;
-      // Update with the actual value from the server, in case of mismatch
-      setCognitions(prev =>
-        prev.map(c =>
-          c.id === id ? { ...c, is_starred: updated } : c
-        )
-      );
-      setSuccess(`Cognition ${updated ? 'starred' : 'unstarred'}`);
-    } catch (error) {
-      console.error('Error starring cognition:', error);
-      setError('Failed to update star status.');
+      const cognition = cognitions.find(c => c.id === id);
+      if (!cognition) return;
+      const updated = { ...cognition, is_starred: !cognition.is_starred };
+      await axiosInstance.put(`/cognitions/${id}/`, updated);
+      setCognitions(prev => prev.map(c => (c.id === id ? updated : c)));
+    } catch {
+      alert('Failed to update star status.');
     }
   };
 
-  // Split cognitions into starred and unstarred
+  const handleNewCognition = async () => {
+    try {
+      const response = await axiosInstance.post('/cognitions/', { title: 'Untitled Cognition', content: '', is_starred: false });
+      setCognitions(prev => [...prev, response.data]);
+      navigate(`/cognition/${response.data.id}`);
+    } catch {
+      alert('Failed to create new cognition.');
+    }
+  };
+
+  const handleFileUpload = async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    setUploading(true);
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const response = await axiosInstance.post('/cognitions/upload/', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      setCognitions(prev => [...prev, response.data]);
+    } catch {
+      alert('Failed to upload file.');
+    } finally {
+      setUploading(false);
+      e.target.value = null;
+    }
+  };
+
   const starredCognitions = cognitions.filter(c => c.is_starred);
   const unstarredCognitions = cognitions.filter(c => !c.is_starred);
 
   return (
-    <div className="input-mode">
-      <div className="container">
-        <div className="sidebar">
-          <h2>Saved Cognitions</h2>
+    <div className="input-mode vertical-layout">
+      <main className="mobile-network">
+        <div className="cognition-list">
           {isLoading && !cognitions.length ? (
             <div className="loading">Loading cognitions...</div>
           ) : error && !cognitions.length ? (
@@ -184,8 +115,8 @@ function InputMode() {
           ) : (
             <>
               <div className="starred-pane">
-                <h3>Starred</h3>
-                <ul className="cognition-list">
+                <h2>Starred</h2>
+                <ul className="cognition-group">
                   {starredCognitions.map(cognition => (
                     <li key={cognition.id} className="cognition-item">
                       <div className="cognition-row">
@@ -201,8 +132,8 @@ function InputMode() {
                 </ul>
               </div>
               <div className="unstarred-pane">
-                <h3>All Cognitions</h3>
-                <ul className="cognition-list">
+                <h2>All Cognitions</h2>
+                <ul className="cognition-group">
                   {unstarredCognitions.map(cognition => (
                     <li key={cognition.id} className="cognition-item">
                       <div className="cognition-row">
@@ -220,58 +151,15 @@ function InputMode() {
             </>
           )}
         </div>
-        <div className="main-content">
-          <div className="input-header">
-            <h2>Create New Cognition</h2>
-            <div className="title-input">
-              <label htmlFor="title">Title:</label>
-              <input 
-                type="text" 
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Enter cognition title"
-              />
-            </div>
-          </div>
-          
-          <textarea
-            className="content-textarea"
-            value={rawContent}
-            onChange={(e) => setRawContent(e.target.value)}
-            placeholder="Paste your text here or upload a file..."
-          />
-          
-          <div className="action-buttons">
-            <label className="file-upload-btn">
-              Browse File
-              <input 
-                type="file" 
-                accept=".txt,.md,.text,.doc,.docx" 
-                onChange={handleFileUpload} 
-                hidden 
-              />
-            </label>
-            <button 
-              className="start-btn"
-              onClick={handleCreateCognition}
-              disabled={isLoading || !rawContent.trim() || !title.trim()}
-            >
-              {isLoading ? 'Processing...' : 'Start Reading'}
-            </button>
-          </div>
-          
-          {error && <p className="error-message">{error}</p>}
-          {success && <p className="success-message">{success}</p>}
-          
-          {isLoading && (
-            <div className="loading-indicator">
-              <div className="spinner"></div>
-              <p>Processing your text... This may take a moment.</p>
-            </div>
-          )}
+      </main>
+
+      <footer className="mobile-footer">
+        <button className="collective-btn">Collective</button>
+        <div className="bottom-button-row">
+          <button className="arcs-btn">Arcs</button>
+          <button className="new-btn" onClick={handleNewCognition}>New</button>
         </div>
-      </div>
+      </footer>
     </div>
   );
 }

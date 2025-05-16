@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import debounce from 'lodash.debounce';
 import { useParams, useNavigate } from "react-router-dom";
-import { useSpeechSynthesis } from "react-speech-kit";
 import { FaTrashAlt, FaHome, FaExpandArrowsAlt, FaCheck, FaCopy } from "react-icons/fa";
 import axiosInstance from "../axiosConfig";
 import "./ReadingMode.css";
@@ -15,13 +14,8 @@ function ReadingMode() {
   const [currentNodeIndex, setCurrentNodeIndex] = useState(0);
   const [synthesis, setSynthesis] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const [autoplayActive, setAutoplayActive] = useState(false);
   const [presetCategories, setPresetCategories] = useState({});
   const [error, setError] = useState(null);
-  const [voiceList, setVoiceList] = useState([]);
-  const [selectedVoiceIndex, setSelectedVoiceIndex] = useState(0);
-  const [speaking, setSpeaking] = useState(false);
-  const [speechRate, setSpeechRate] = useState(1.0);
   const [expandMode, setExpandMode] = useState(false);
   const [newText, setNewText] = useState('');
   const [appendingText, setAppendingText] = useState(false);
@@ -29,6 +23,9 @@ function ReadingMode() {
   const [copiedNode, setCopiedNode] = useState(false);
   const [copiedSynthesis, setCopiedSynthesis] = useState(false);
   const [copiedBoth, setCopiedBoth] = useState(false);
+
+  // --- Multi-selection state for timeline blocks ---
+  const [selectedIndices, setSelectedIndices] = useState(new Set());
 
   const currentNode = nodes[currentNodeIndex] || null;
 
@@ -89,9 +86,6 @@ function ReadingMode() {
     }
   };
   const synthesisRef = useRef(null);
-  const autoplayTimerRef = useRef(null);
-  const lastNodeIndexRef = useRef(-1);
-  const { speak, cancel, supported, voices } = useSpeechSynthesis();
 
   // --- Fetch cognition and nodes ---
   const fetchCognition = useCallback(async () => {
@@ -146,49 +140,11 @@ function ReadingMode() {
     [nodes, synthesis]
   );
 
-  // --- Load voices using voiceschanged event ---
-  useEffect(() => {
-    let mounted = true;
-    function updateVoices() {
-      if (!window.speechSynthesis) return;
-      const allVoices = window.speechSynthesis.getVoices();
-      const en = allVoices.filter(v => v.lang.toLowerCase().startsWith("en")).slice(0,2);
-      const mx = allVoices.filter(v => v.lang.toLowerCase() === "es-mx").slice(0,2);
-      const v = [...en, ...mx];
-      if (mounted) setVoiceList(v);
-    }
-    updateVoices();
-    window.speechSynthesis?.addEventListener("voiceschanged", updateVoices);
-    // fallback: update after a short delay
-    const t = setTimeout(updateVoices, 500);
-    return () => {
-      mounted = false;
-      window.speechSynthesis?.removeEventListener("voiceschanged", updateVoices);
-      clearTimeout(t);
-    };
-  }, []);
-
-  // --- Select default voice when loaded ---
-  useEffect(() => {
-    if (voiceList.length > 0) {
-      // Prefer English voice, fallback to first
-      let idx = voiceList.findIndex(
-        (v) => v.lang && v.lang.toLowerCase().startsWith("en")
-      );
-      if (idx === -1) idx = 0;
-      setSelectedVoiceIndex(idx);
-    }
-  }, [voiceList]);
 
   // --- Initial load ---
   useEffect(() => {
     fetchCognition();
     fetchPresetResponses();
-    if (window.speechSynthesis) window.speechSynthesis.getVoices();
-    return () => {
-      if (autoplayTimerRef.current) clearTimeout(autoplayTimerRef.current);
-      cancel();
-    };
     // eslint-disable-next-line
   }, [id]);
 
@@ -210,184 +166,50 @@ function ReadingMode() {
     console.log("Current synthesis state:", synthesis);
   }, [synthesis]);
 
-  // --- Save synthesis when leaving node ---
-  useEffect(() => {
-    if (
-      lastNodeIndexRef.current >= 0 &&
-      lastNodeIndexRef.current < nodes.length &&
-      lastNodeIndexRef.current !== currentNodeIndex
-    ) {
-      saveSynthesis(lastNodeIndexRef.current);
-    }
-    lastNodeIndexRef.current = currentNodeIndex;
-    cancel();
-    // Auto-play when cell changes
-    handleReadCurrentNode();
-    // eslint-disable-next-line
-  }, [currentNodeIndex]);
 
-  // --- Handle autoplay ---
-  useEffect(() => {
-    if (autoplayActive && !speaking && nodes.length > 0) {
-      // Clear any existing timer
-      if (autoplayTimerRef.current) {
-        clearTimeout(autoplayTimerRef.current);
-        autoplayTimerRef.current = null;
-      }
-      
-      // Set new timer with a small delay
-      autoplayTimerRef.current = setTimeout(() => {
-        handleReadCurrentNode();
-      }, 100);
-    } else {
-      // Clear timer if autoplay is disabled or we're speaking
-      if (autoplayTimerRef.current) {
-        clearTimeout(autoplayTimerRef.current);
-        autoplayTimerRef.current = null;
-      }
-    }
-    // eslint-disable-next-line
-  }, [autoplayActive, speaking, nodes]);
-
-  // --- Keyboard navigation ---
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if (e.target.tagName === "TEXTAREA" || e.target.tagName === "INPUT") return;
-      switch (e.key) {
-        case "ArrowLeft":
-          e.preventDefault();
-          if (currentNodeIndex > 0) {
-            handleStopSpeech();
-            setCurrentNodeIndex((i) => i - 1);
-          }
-          break;
-        case "ArrowRight":
-          e.preventDefault();
-          if (currentNodeIndex < nodes.length - 1) {
-            handleStopSpeech();
-            setCurrentNodeIndex((i) => i + 1);
-          }
-          break;
-        case "ArrowUp":
-          e.preventDefault();
-          handleReadCurrentNode();
-          break;
-        case "ArrowDown":
-          e.preventDefault();
-          handleStopSpeech();
-          break;
-        case " ":
-          e.preventDefault();
-          handleToggleAutoplay();
-          break;
-        default:
-          break;
-      }
-    };
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-    // eslint-disable-next-line
-  }, [currentNodeIndex, nodes.length, autoplayActive]);
-
-  // --- Speech Synthesis Logic ---
-  const handleReadCurrentNode = useCallback(() => {
-    if (!voiceList.length || !supported) return;
-    if (currentNodeIndex >= 0 && currentNodeIndex < nodes.length) {
-      const nodeText = nodes[currentNodeIndex]?.content || "";
-      const cleanText = nodeText
-        .replace(/[#*_`~+=[\]{}()<>|\\/@%^&$]/g, " ")
-        .replace(/\s+/g, " ")
-        .trim();
-      if (cleanText) {
-        try {
-          window.speechSynthesis.cancel();
-          setTimeout(() => {
-            setSpeaking(true);
-            speak({
-              text: cleanText,
-              voice: voiceList[selectedVoiceIndex],
-              rate: speechRate,
-              pitch: 1.0,
-              volume: 1.0,
-              onend: () => {
-                setSpeaking(false);
-                if (!autoplayActive) cancel();
-                if (autoplayActive && currentNodeIndex < nodes.length - 1) {
-                  setCurrentNodeIndex((i) => i + 1);
-                } else if (autoplayActive && currentNodeIndex >= nodes.length - 1) {
-                  setAutoplayActive(false);
-                }
-              },
-              onerror: (err) => {
-                setSpeaking(false);
-                setError("Speech synthesis error: " + (err?.message || "Unknown error"));
-                setAutoplayActive(false);
-              },
-            });
-          }, 50);
-        } catch (err) {
-          setSpeaking(false);
-          setError("Speech error: " + (err?.message || "Unknown error"));
-          setAutoplayActive(false);
-        }
-      } else if (autoplayActive && currentNodeIndex < nodes.length - 1) {
-        setCurrentNodeIndex((i) => i + 1);
-      }
-    }
-    // eslint-disable-next-line
-  }, [voiceList, selectedVoiceIndex, currentNodeIndex, nodes, supported, autoplayActive, speak, speechRate, cancel]);
-
-  const handleStopSpeech = useCallback(() => {
-    try {
-      window.speechSynthesis.cancel();
-      cancel();
-      setSpeaking(false);
-      if (autoplayTimerRef.current) {
-        clearTimeout(autoplayTimerRef.current);
-        autoplayTimerRef.current = null;
-      }
-    } catch (err) {}
-  }, [cancel]);
 
   // --- Navigation ---
   const goToNextNode = async () => {
     if (currentNodeIndex < nodes.length - 1) {
       await fetchCognition();
-      handleStopSpeech();
       setCurrentNodeIndex((i) => i + 1);
-      setTimeout(() => handleReadCurrentNode(), 50);
     }
   };
   const goToPreviousNode = async () => {
     if (currentNodeIndex > 0) {
       await fetchCognition();
-      handleStopSpeech();
       setCurrentNodeIndex((i) => i - 1);
-      setTimeout(() => handleReadCurrentNode(), 50);
     }
   };
-  const handleTimelineClick = async (index) => {
+  const handleTimelineClick = async (index, event) => {
     await fetchCognition();
     await saveSynthesis(currentNodeIndex);
-    handleStopSpeech();
+    if (event && event.shiftKey) {
+      const newSelection = new Set(selectedIndices);
+      const rangeStart = Math.min(currentNodeIndex, index);
+      const rangeEnd = Math.max(currentNodeIndex, index);
+      for (let i = rangeStart; i <= rangeEnd; i++) {
+        newSelection.add(i);
+      }
+      setSelectedIndices(newSelection);
+    } else if (event && (event.ctrlKey || event.metaKey)) {
+      const newSelection = new Set(selectedIndices);
+      if (newSelection.has(index)) {
+        newSelection.delete(index);
+      } else {
+        newSelection.add(index);
+      }
+      setSelectedIndices(newSelection);
+    } else {
+      setSelectedIndices(new Set([index]));
+    }
+
     setCurrentNodeIndex(index);
-    setTimeout(() => handleReadCurrentNode(), 50);
   };
   const handleReturnHome = () => {
     navigate("/");
   };
   const handleSynthesisChange = (e) => setSynthesis(e.target.value);
-  const handleVoiceChange = (e) => setSelectedVoiceIndex(Number(e.target.value));
-  const handleToggleAutoplay = () => {
-    if (autoplayActive) {
-      handleStopSpeech();
-      setAutoplayActive(false);
-    } else {
-      setAutoplayActive(true);
-      // Start reading immediately when autoplay is enabled
-      setTimeout(() => handleReadCurrentNode(), 50);
-    }
-  };
   const handleToggleIllumination = async () => {
     if (nodes.length === 0 || currentNodeIndex >= nodes.length) return;
     try {
@@ -403,24 +225,6 @@ function ReadingMode() {
       setNodes(updatedNodes);
     } catch (err) {
       // ignore
-    }
-  };
-  const handleTestSpeech = () => {
-    if (!voiceList.length || !supported) return;
-    try {
-      setSpeaking(true);
-      speak({
-        text: "This is a test of the speech synthesis",
-        voice: voiceList[selectedVoiceIndex],
-        rate: speechRate,
-        pitch: 1.0,
-        volume: 1.0,
-        onend: () => setSpeaking(false),
-        onerror: () => setSpeaking(false),
-      });
-    } catch (err) {
-      setSpeaking(false);
-      setError("Test speech error: " + (err?.message || "Unknown error"));
     }
   };
 
@@ -463,16 +267,6 @@ function ReadingMode() {
     }
   };
 
-  // --- Error for unsupported speech synthesis ---
-  useEffect(() => {
-    if (!supported) {
-      setError(
-        "Speech synthesis is not supported in this browser. Please try Chrome, Edge, or Safari."
-      );
-    } else {
-      setError(null);
-    }
-  }, [supported]);
 
   const handleAppendText = async () => {
     if (!newText.trim()) {
@@ -512,249 +306,46 @@ function ReadingMode() {
   if (!cognition) {
     return <div className="reading-mode-error">Could not load cognition</div>;
   }
-  const speechSynthesisReady = supported && voiceList.length > 0;
 
   return (
     <div className="reading-mode-container">
-      {expandMode && (
-        <div className="expand-modal-overlay">
-          <div className="expand-modal">
-            <div className="expand-modal-header">
-              <h3>Append Text to "{cognition?.title || 'Cognition'}"</h3>
-              <button 
-                className="close-btn" 
-                onClick={() => setExpandMode(false)}
-              >
-                ×
-              </button>
-            </div>
-            <div className="expand-modal-body">
-              <textarea
-                className="expand-textarea"
-                value={newText}
-                onChange={(e) => setNewText(e.target.value)}
-                placeholder="Paste or type additional text to append to this cognition..."
-                rows={10}
-              />
-            </div>
-            <div className="expand-modal-footer">
-              <button 
-                className="cancel-btn"
-                onClick={() => setExpandMode(false)}
-              >
-                Cancel
-              </button>
-              <button
-                className="append-btn"
-                onClick={handleAppendText}
-                disabled={appendingText || !newText.trim()}
-              >
-                {appendingText ? "Appending..." : "Append Text"}
-              </button>
-            </div>
+      <div className="reading-mode-timeline-wrapper">
+        <Timeline
+          nodes={nodes}
+          currentIndex={currentNodeIndex}
+          onClick={handleTimelineClick}
+          selectedIndices={selectedIndices}
+        />
+      </div>
+
+      <div className="reading-mode-mobile-layout">
+        <div
+          className="node-center-display"
+          onClick={(e) => {
+            const { left, width } = e.currentTarget.getBoundingClientRect();
+            const x = e.clientX - left;
+            if (x < width / 2) {
+              goToPreviousNode();
+            } else {
+              goToNextNode();
+            }
+          }}
+          style={{ width: "100%", cursor: "pointer" }}
+        >
+          <div className="node-content-box">
+            {currentNode?.content}
           </div>
         </div>
-      )}
-      <div className="reading-mode-split-layout">
-        {/* Left Side - Controls only */}
-        <div className="reading-mode-controls-panel">
-          <div className="node-info">
-            <div className="title-row">
-              <div className="cognition-title">{cognition?.title}</div>
-              <div className="title-buttons">
-                <button
-                  onClick={() => setExpandMode(true)}
-                  className="expand-btn"
-                  title="Expand Cognition"
-                  aria-label="Expand Cognition"
-                >
-                  <FaExpandArrowsAlt />
-                </button>
-                <button
-                  onClick={handleReturnHome}
-                  className="home-btn"
-                  title="Return to Home"
-                  aria-label="Return to Home"
-                >
-                  <FaHome />
-                </button>
-                <button
-                  onClick={handleDeleteCognition}
-                  className="delete-btn"
-                  title="Delete Cognition"
-                  aria-label="Delete Cognition"
-                >
-                  <FaTrashAlt />
-                </button>
-              </div>
-            </div>
-            {/* Timeline and synthesis-section removed from here */}
-            <div className="navigation-controls">
-              <button
-                onClick={goToPreviousNode}
-                disabled={currentNodeIndex <= 0 || isLoading}
-                className="nav-btn"
-                title="Previous Node (Left Arrow)"
-              >
-                ← Prev
-              </button>
-              <button
-                onClick={goToNextNode}
-                disabled={currentNodeIndex >= nodes.length - 1 || isLoading}
-                className="nav-btn"
-                title="Next Node (Right Arrow)"
-              >
-                Next →
-              </button>
-            </div>
-            <div className="voice-controls">
-              <div className="selector-group horizontal mb-2">
-                <select
-                  id="voice-select"
-                  onChange={handleVoiceChange}
-                  disabled={!speechSynthesisReady}
-                  value={selectedVoiceIndex}
-                  className="voice-select"
-                >
-                  {voiceList.length > 0 ? (
-                    voiceList.map((voice, idx) => (
-                      <option key={idx} value={idx}>
-                        {voice.name} ({voice.lang})
-                      </option>
-                    ))
-                  ) : (
-                    <option value={0}>No voices available</option>
-                  )}
-                </select>
-                <input
-                  type="range"
-                  min="0.5"
-                  max="4"
-                  step="0.05"
-                  value={speechRate}
-                  onChange={(e) => setSpeechRate(Number(e.target.value))}
-                  className="speech-rate-slider"
-                />
-              </div>
-            </div>
-            <div className="playback-controls">
-              <button
-                onClick={handleReadCurrentNode}
-                disabled={isLoading || !speechSynthesisReady}
-                className="control-btn"
-                title="Read Aloud (Up Arrow)"
-              >
-                Read
-              </button>
-              <button
-                onClick={handleStopSpeech}
-                disabled={!speaking}
-                className="control-btn"
-                title="Stop Reading (Down Arrow)"
-              >
-                Stop
-              </button>
-              <button
-                onClick={handleToggleAutoplay}
-                disabled={isLoading || !speechSynthesisReady}
-                className={`control-btn ${autoplayActive ? "active" : ""}`}
-                title="Toggle Autoplay (Spacebar)"
-              >
-                {autoplayActive ? "⏹ Stop" : "▶ Play"}
-              </button>
-              <button
-                onClick={handleToggleIllumination}
-                disabled={isLoading}
-                className={`control-btn ${
-                  currentNode?.is_illuminated ? "active" : ""
-                }`}
-                title="Toggle Illumination"
-              >
-                {currentNode?.is_illuminated ? "★" : "☆"}
-              </button>
-            </div>
-            {error && (
-              <div className="error-message">
-                {error}
-                <button
-                  onClick={() => setError(null)}
-                  className="dismiss-error-btn"
-                >
-                  Dismiss
-                </button>
-              </div>
-            )}
-          </div>
-        </div>
-        {/* Right Side - Content Display, Synthesis, Timeline */}
-        <div className="reading-mode-content-panel">
-          <div className="content-split-vertical">
-            <div className="node-container">
-              <textarea
-                className="node-textarea"
-                value={nodeText}
-                onChange={handleNodeChange}
-                placeholder="Edit the node content here..."
-              />
-            </div>
-            <div className="synthesis-and-timeline-container">
-              <div className="synthesis-section">
-                <textarea
-                  ref={synthesisRef}
-                  className="synthesis-textarea"
-                  value={synthesis}
-                  onChange={handleSynthesisChange}
-                  placeholder="Write your synthesis here..."
-                />
-                {currentNode?.synthesis?.presets?.length > 0 && (
-                  <div className="associated-presets">
-                    <div className="preset-scroll-box">
-                      {currentNode.synthesis.presets.map((preset, index) => (
-                        <div key={index} className="preset-block">
-                          <div className="preset-block-title">{preset.title}</div>
-                          <div className="preset-block-content">{preset.content}</div>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-              <div className="timeline-wrapper timeline-bottom">
-                <Timeline
-                  nodes={nodes}
-                  currentIndex={currentNodeIndex}
-                  onClick={handleTimelineClick}
-                />
-              </div>
-            </div>
-          </div>
-          <div className="copy-buttons">
-            <button
-              onClick={handleCopyNode}
-              className="copy-btn copy-node-btn"
-              title="Copy Node"
-              aria-label="Copy Node"
-            >
-              {copiedNode && <FaCheck />}
-            </button>
-            <button
-              onClick={handleCopyBoth}
-              className="copy-btn copy-both-btn"
-              title="Copy Both"
-              aria-label="Copy Both"
-            >
-              {copiedBoth && <FaCheck />}
-            </button>
-            <button
-              onClick={handleCopySynthesis}
-              className="copy-btn copy-synthesis-btn"
-              title="Copy Synthesis"
-              aria-label="Copy Synthesis"
-            >
-              {copiedSynthesis && <FaCheck />}
-            </button>
-          </div>
-        </div>
+      </div>
+
+      <div className="synthesis-bottom-bar">
+        <textarea
+          ref={synthesisRef}
+          className="synthesis-textarea"
+          value={synthesis}
+          onChange={handleSynthesisChange}
+          placeholder="Write your synthesis here..."
+        />
       </div>
     </div>
   );
