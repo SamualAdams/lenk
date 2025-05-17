@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import debounce from 'lodash.debounce';
 import { useParams, useNavigate } from "react-router-dom";
-import { FaTrashAlt, FaHome, FaExpandArrowsAlt, FaCheck, FaCopy } from "react-icons/fa";
+import { FaTrashAlt, FaHome, FaExpandArrowsAlt, FaCheck, FaCopy, 
+         FaChevronLeft, FaChevronRight, FaStar, FaRegStar } from "react-icons/fa";
 import axiosInstance from "../axiosConfig";
 import "./ReadingMode.css";
-import Timeline from "./Timeline"; // Import the standalone Timeline component
+import Timeline from "./Timeline";
 
 function ReadingMode() {
   const { id } = useParams();
@@ -14,38 +15,41 @@ function ReadingMode() {
   const [currentNodeIndex, setCurrentNodeIndex] = useState(0);
   const [synthesis, setSynthesis] = useState("");
   const [isLoading, setIsLoading] = useState(true);
-  const [presetCategories, setPresetCategories] = useState({});
   const [error, setError] = useState(null);
   const [expandMode, setExpandMode] = useState(false);
   const [newText, setNewText] = useState('');
   const [appendingText, setAppendingText] = useState(false);
-
-  const [copiedNode, setCopiedNode] = useState(false);
-  const [copiedSynthesis, setCopiedSynthesis] = useState(false);
-  const [copiedBoth, setCopiedBoth] = useState(false);
-
-  // --- Multi-selection state for timeline blocks ---
   const [selectedIndices, setSelectedIndices] = useState(new Set());
+  const [editMode, setEditMode] = useState(false);
+  const [synthesisSaved, setSynthesisSaved] = useState(true);
+  const [showToast, setShowToast] = useState(false);
+  const [toastMessage, setToastMessage] = useState('');
 
   const currentNode = nodes[currentNodeIndex] || null;
-
-  // --- State for editing node content ---
   const [nodeText, setNodeText] = useState("");
-  // --- Sync nodeText with current node, but avoid overwriting unsaved edits ---
+  const textareaRef = useRef(null);
+  const synthesisRef = useRef(null);
+
+  // Toast message helper
+  const displayToast = (message) => {
+    setToastMessage(message);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 2000);
+  };
+
+  // Sync nodeText with current node
   useEffect(() => {
-    const newContent = currentNode?.content || "";
-    if (newContent !== nodeText) {
-      setNodeText(newContent);
+    if (currentNode?.content) {
+      setNodeText(currentNode.content);
     }
   }, [currentNode]);
 
-  // --- Debounced autosave for node content ---
-  const debouncedSave = useCallback(
+  // Debounced autosave for node content
+  const debouncedSaveNode = useCallback(
     debounce(async (text) => {
       if (!currentNode) return;
       try {
-        console.log("Saving node via POST:", currentNode.id, text);
-        const response = await axiosInstance.post("/nodes/add_or_update/", {
+        await axiosInstance.post("/nodes/add_or_update/", {
           node_id: currentNode.id,
           content: text
         });
@@ -54,28 +58,70 @@ function ReadingMode() {
             idx === currentNodeIndex ? { ...n, content: text } : n
           )
         );
+        displayToast("Node saved");
       } catch (err) {
-        console.error("Debounced save node error (POST):", err);
+        setError("Failed to save node");
       }
     }, 1000),
     [currentNode, currentNodeIndex]
   );
 
-  // cancel debounce on unmount
+  // Debounced autosave for synthesis
+  const debouncedSaveSynthesis = useCallback(
+    debounce(async (text) => {
+      if (!currentNode) return;
+      try {
+        await axiosInstance.post("/syntheses/add_or_update/", {
+          node_id: currentNode.id,
+          content: text
+        });
+        
+        // Update nodes state with new synthesis
+        setNodes(nodes => {
+          const updatedNodes = [...nodes];
+          updatedNodes[currentNodeIndex] = {
+            ...currentNode,
+            synthesis: {
+              ...(currentNode.synthesis || {}),
+              content: text
+            }
+          };
+          return updatedNodes;
+        });
+        
+        setSynthesisSaved(true);
+        displayToast("Synthesis saved");
+      } catch (err) {
+        setError("Failed to save synthesis");
+      }
+    }, 1000),
+    [currentNode, currentNodeIndex]
+  );
+
+  // Cancel debounce on unmount
   useEffect(() => {
     return () => {
-      debouncedSave.cancel();
+      debouncedSaveNode.cancel();
+      debouncedSaveSynthesis.cancel();
     };
-  }, [debouncedSave]);
+  }, [debouncedSaveNode, debouncedSaveSynthesis]);
 
-  // handle textarea changes with debounced save
+  // Handle node text changes with debounced save
   const handleNodeChange = (e) => {
     const text = e.target.value;
     setNodeText(text);
-    debouncedSave(text);
+    debouncedSaveNode(text);
   };
 
-  // --- Delete cognition handler ---
+  // Handle synthesis changes with debounced save
+  const handleSynthesisChange = (e) => {
+    const text = e.target.value;
+    setSynthesis(text);
+    setSynthesisSaved(false);
+    debouncedSaveSynthesis(text);
+  };
+
+  // Delete cognition handler
   const handleDeleteCognition = async () => {
     if (!window.confirm("Are you sure you want to delete this cognition?")) return;
     try {
@@ -85,15 +131,13 @@ function ReadingMode() {
       setError("Failed to delete cognition");
     }
   };
-  const synthesisRef = useRef(null);
 
-  // --- Fetch cognition and nodes ---
+  // Fetch cognition and nodes
   const fetchCognition = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
       const response = await axiosInstance.get(`/cognitions/${id}/?include_syntheses=true`);
-      console.log("API response:", response.data);
       setCognition(response.data);
       setNodes(response.data.nodes || []);
       setIsLoading(false);
@@ -103,88 +147,54 @@ function ReadingMode() {
     }
   }, [id]);
 
-  // --- Fetch preset responses ---
-  const fetchPresetResponses = useCallback(async () => {
+  // Toggle cognition star status
+  const toggleStar = async () => {
     try {
-      setError(null);
-      const response = await axiosInstance.get("/preset-responses/by_category/");
-      setPresetCategories(response.data);
+      const response = await axiosInstance.post(`/cognitions/${id}/star/`);
+      setCognition(prev => ({...prev, is_starred: response.data.starred }));
+      displayToast(response.data.starred ? "Added to starred" : "Removed from starred");
     } catch (err) {
-      // ignore
+      setError("Failed to update star status");
     }
-  }, []);
+  };
 
-  // --- Save synthesis for a node ---
-  const saveSynthesis = useCallback(
-    async (nodeIndex) => {
-      if (nodeIndex < 0 || nodeIndex >= nodes.length) return;
-      const node = nodes[nodeIndex];
-      try {
-        const response = await axiosInstance.post("/syntheses/add_or_update/", {
-          node_id: node.id,
-          content: synthesis,
-        });
-        const updatedNodes = [...nodes];
-        updatedNodes[nodeIndex] = {
-          ...node,
-          synthesis: {
-            id: response.data.id,
-            content: synthesis
-          }
-        };
-        setNodes(updatedNodes);
-      } catch (err) {
-        // ignore
-      }
-    },
-    [nodes, synthesis]
-  );
-
-
-  // --- Initial load ---
+  // Initial load
   useEffect(() => {
     fetchCognition();
-    fetchPresetResponses();
-    // eslint-disable-next-line
-  }, [id]);
+  }, [fetchCognition, id]);
 
-  // --- Update synthesis textarea when node changes ---
+  // Update synthesis textarea when node changes
   useEffect(() => {
     if (nodes.length && currentNodeIndex >= 0 && currentNodeIndex < nodes.length) {
-      console.log("Current node:", nodes[currentNodeIndex]);
-      console.log("Synthesis data:", nodes[currentNodeIndex]?.synthesis);
       setSynthesis(nodes[currentNodeIndex]?.synthesis?.content || "");
+      setSynthesisSaved(true);
     } else {
       setSynthesis("");
     }
   }, [nodes, currentNodeIndex]);
 
-  useEffect(() => {
-    console.log("Updated nodes:", nodes);
-  }, [nodes]);
-  useEffect(() => {
-    console.log("Current synthesis state:", synthesis);
-  }, [synthesis]);
-
-
-
-  // --- Navigation ---
-  const goToNextNode = async () => {
+  // Navigation
+  const goToNextNode = () => {
     if (currentNodeIndex < nodes.length - 1) {
-      await fetchCognition();
-      setCurrentNodeIndex((i) => i + 1);
+      setCurrentNodeIndex(prev => prev + 1);
     }
   };
-  const goToPreviousNode = async () => {
+
+  const goToPreviousNode = () => {
     if (currentNodeIndex > 0) {
-      await fetchCognition();
-      setCurrentNodeIndex((i) => i - 1);
+      setCurrentNodeIndex(prev => prev - 1);
     }
   };
-  const handleTimelineClick = async (index, event) => {
-    await fetchCognition();
-    await saveSynthesis(currentNodeIndex);
+
+  // Timeline click handler
+  const handleTimelineClick = (index, event) => {
+    // Save current synthesis before moving
+    if (!synthesisSaved && synthesis) {
+      debouncedSaveSynthesis.flush();
+    }
+    
     if (event && event.shiftKey) {
+      // Handle multi-selection with shift key
       const newSelection = new Set(selectedIndices);
       const rangeStart = Math.min(currentNodeIndex, index);
       const rangeEnd = Math.max(currentNodeIndex, index);
@@ -193,6 +203,7 @@ function ReadingMode() {
       }
       setSelectedIndices(newSelection);
     } else if (event && (event.ctrlKey || event.metaKey)) {
+      // Handle multi-selection with ctrl/cmd key
       const newSelection = new Set(selectedIndices);
       if (newSelection.has(index)) {
         newSelection.delete(index);
@@ -201,72 +212,70 @@ function ReadingMode() {
       }
       setSelectedIndices(newSelection);
     } else {
+      // Regular click - select just this node
       setSelectedIndices(new Set([index]));
     }
 
     setCurrentNodeIndex(index);
   };
-  const handleReturnHome = () => {
-    navigate("/");
-  };
-  const handleSynthesisChange = (e) => setSynthesis(e.target.value);
+
+  // Toggle node illumination
   const handleToggleIllumination = async () => {
-    if (nodes.length === 0 || currentNodeIndex >= nodes.length) return;
+    if (!currentNode) return;
+    
     try {
-      const node = nodes[currentNodeIndex];
-      const response = await axiosInstance.post(
-        `/nodes/${node.id}/toggle_illumination/`
-      );
-      const updatedNodes = [...nodes];
-      updatedNodes[currentNodeIndex] = {
-        ...node,
-        is_illuminated: response.data.is_illuminated,
-      };
-      setNodes(updatedNodes);
+      const response = await axiosInstance.post(`/nodes/${currentNode.id}/toggle_illumination/`);
+      
+      // Update nodes state with new illumination status
+      setNodes(prev => {
+        const updated = [...prev];
+        updated[currentNodeIndex] = {
+          ...currentNode,
+          is_illuminated: response.data.is_illuminated
+        };
+        return updated;
+      });
+      
+      displayToast(response.data.is_illuminated ? 
+        "Node illuminated" : 
+        "Node illumination removed");
     } catch (err) {
-      // ignore
+      setError("Failed to toggle illumination");
     }
   };
 
-  // --- Copy to clipboard handlers ---
+  // Copy handlers
   const handleCopyNode = () => {
     if (currentNode) {
       navigator.clipboard.writeText(currentNode.content);
-      setCopiedNode(true);
-      setTimeout(() => setCopiedNode(false), 1500);
-    }
-  };
-  const handleCopySynthesis = () => {
-    if (synthesis) {
-      navigator.clipboard.writeText(synthesis);
-      setCopiedSynthesis(true);
-      setTimeout(() => setCopiedSynthesis(false), 1500);
-    }
-  };
-  const handleCopyBoth = () => {
-    const text = `${currentNode?.content || ""}\n\n${synthesis}`;
-    navigator.clipboard.writeText(text);
-    setCopiedBoth(true);
-    setTimeout(() => setCopiedBoth(false), 1500);
-  };
-  // --- Preset response handling ---
-  const togglePresetResponse = async (presetId) => {
-    const node = nodes[currentNodeIndex];
-    if (!node?.synthesis?.id) return;
-    const synthId = node.synthesis.id;
-    const isSelected = node.synthesis.presets?.some(p => p.id === presetId);
-    try {
-      if (isSelected) {
-        await axiosInstance.post(`/syntheses/${synthId}/remove_preset/`, { preset_id: presetId });
-      } else {
-        await axiosInstance.post(`/syntheses/${synthId}/add_preset/`, { preset_id: presetId });
-      }
-      await fetchCognition();
-    } catch (err) {
-      console.error("Preset toggle error:", err);
+      displayToast("Node content copied to clipboard");
     }
   };
 
+  const handleCopySynthesis = () => {
+    if (synthesis) {
+      navigator.clipboard.writeText(synthesis);
+      displayToast("Synthesis copied to clipboard");
+    }
+  };
+
+  const handleCopyBoth = () => {
+    if (currentNode) {
+      const text = `${currentNode.content || ""}\n\n${synthesis || ""}`;
+      navigator.clipboard.writeText(text);
+      displayToast("Node and synthesis copied to clipboard");
+    }
+  };
+
+  // Add/append text modal
+  const handleOpenExpandMode = () => {
+    setExpandMode(true);
+    setNewText('');
+  };
+
+  const handleCloseExpandMode = () => {
+    setExpandMode(false);
+  };
 
   const handleAppendText = async () => {
     if (!newText.trim()) {
@@ -278,11 +287,9 @@ function ReadingMode() {
       setAppendingText(true);
       setError(null);
       
-      const response = await axiosInstance.post(`/cognitions/${id}/append_text/`, {
+      await axiosInstance.post(`/cognitions/${id}/append_text/`, {
         text: newText
       });
-      
-      console.log('Text appended successfully:', response.data);
       
       // Refresh the cognition data to get the new nodes
       await fetchCognition();
@@ -293,15 +300,63 @@ function ReadingMode() {
       setAppendingText(false);
       
       // Navigate to the first of the newly added nodes
-      const newNodeIndex = nodes.length; // This will be the index of the first new node
-      setCurrentNodeIndex(newNodeIndex);
+      setCurrentNodeIndex(nodes.length);
+      displayToast("Text appended successfully");
       
     } catch (err) {
-      console.error('Error appending text:', err);
-      setError('Failed to append text to cognition. Please try again.');
+      setError('Failed to append text to cognition');
       setAppendingText(false);
     }
   };
+
+  // Keyboard navigation
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Only handle keyboard shortcuts if not in a text area
+      if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
+        return;
+      }
+      
+      switch (e.key) {
+        case 'ArrowLeft':
+          goToPreviousNode();
+          break;
+        case 'ArrowRight':
+          goToNextNode();
+          break;
+        case 'e':
+          setEditMode(prev => !prev);
+          break;
+        case 'h':
+          navigate('/');
+          break;
+        default:
+          break;
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [currentNodeIndex, nodes.length, navigate]);
+
+  // Focus on edit textarea when entering edit mode
+  useEffect(() => {
+    if (editMode && textareaRef.current) {
+      textareaRef.current.focus();
+    }
+  }, [editMode]);
+
+
+  // Loading states
+  if (isLoading) {
+    return <div className="reading-mode-loading">Loading cognition...</div>;
+  }
+
+  if (error) {
+    return <div className="reading-mode-error">{error}</div>;
+  }
 
   if (!cognition) {
     return <div className="reading-mode-error">Could not load cognition</div>;
@@ -309,7 +364,45 @@ function ReadingMode() {
 
   return (
     <div className="reading-mode-container">
-      <div className="reading-mode-timeline-wrapper">
+      {/* Header section */}
+      <header className="reading-header">
+        <div className="header-left">
+          <button 
+            className="icon-button home-btn" 
+            onClick={() => navigate('/')}
+            title="Return to home"
+          >
+            <FaHome />
+          </button>
+          <h1 className="cognition-title">{cognition.title}</h1>
+          <button 
+            className="icon-button star-btn" 
+            onClick={toggleStar}
+            title={cognition.is_starred ? "Unstar" : "Star"}
+          >
+            {cognition.is_starred ? <FaStar /> : <FaRegStar />}
+          </button>
+        </div>
+        <div className="header-right">
+          <button 
+            className="icon-button expand-btn" 
+            onClick={handleOpenExpandMode}
+            title="Add text"
+          >
+            <FaExpandArrowsAlt />
+          </button>
+          <button 
+            className="icon-button delete-btn" 
+            onClick={handleDeleteCognition}
+            title="Delete"
+          >
+            <FaTrashAlt />
+          </button>
+        </div>
+      </header>
+
+      {/* Timeline section */}
+      <div className="timeline-wrapper">
         <Timeline
           nodes={nodes}
           currentIndex={currentNodeIndex}
@@ -318,46 +411,133 @@ function ReadingMode() {
         />
       </div>
 
-      <div className="reading-mode-mobile-layout">
-        <div
-          className="node-center-display"
-          onClick={(e) => {
-            const { left, width } = e.currentTarget.getBoundingClientRect();
-            const x = e.clientX - left;
-            if (x < width / 2) {
-              goToPreviousNode();
-            } else {
-              goToNextNode();
-            }
-          }}
-          style={{ width: "100%", cursor: "pointer" }}
+      {/* Main content area */}
+      <main className="reading-content">
+
+
+        {/* Node content */}
+        <div 
+          className="node-content-wrapper"
+          style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}
         >
-          <div className="node-content-box">
-            {currentNode?.content}
+          <div className="node-content-actions" style={{ flexShrink: 0 }}>
+            <button 
+              className={`icon-button ${currentNode?.is_illuminated ? 'illuminated' : ''}`} 
+              onClick={handleToggleIllumination}
+              title={currentNode?.is_illuminated ? "Remove illumination" : "Illuminate node"}
+            >
+              <FaStar className="illumination-indicator" />
+            </button>
+            <button 
+              className="icon-button edit-btn" 
+              onClick={() => setEditMode(!editMode)}
+              title={editMode ? "View mode" : "Edit mode"}
+            >
+              {editMode ? "View" : "Edit"}
+            </button>
+            <button 
+              className="icon-button copy-btn" 
+              onClick={handleCopyNode}
+              title="Copy node content"
+            >
+              <FaCopy />
+            </button>
           </div>
+          
+          {editMode ? (
+            <textarea
+              ref={textareaRef}
+              className="node-content-editable"
+              style={{ flex: 1, minHeight: 0 }}
+              value={nodeText}
+              onChange={handleNodeChange}
+              placeholder="Enter node content..."
+            />
+          ) : (
+            <div className="node-content-box" style={{ flex: 1, minHeight: 0 }}>{currentNode?.content}</div>
+          )}
         </div>
+
+        {/* Synthesis section - always visible */}
+        <div 
+          className="synthesis-section"
+          style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}
+        >
+          <div className="synthesis-header" style={{ flexShrink: 0 }}>
+            <div className="synthesis-label">Synthesis</div>
+            <div className="synthesis-actions">
+              <button 
+                className="icon-button copy-btn" 
+                onClick={handleCopySynthesis}
+                title="Copy synthesis"
+              >
+                <FaCopy />
+              </button>
+              <button 
+                className="icon-button copy-both-btn" 
+                onClick={handleCopyBoth}
+                title="Copy node and synthesis"
+              >
+                <FaCopy /> Both
+              </button>
+            </div>
+          </div>
+          
+          <textarea
+            ref={synthesisRef}
+            className="synthesis-textarea"
+            style={{ flex: 1, minHeight: 0 }}
+            value={synthesis}
+            onChange={handleSynthesisChange}
+            placeholder="Write your synthesis here..."
+          />
+        </div>
+      </main>
+
+      {/* Mobile navigation overlay */}
+      <div className="mobile-navigation">
+        <div className="node-touch-zone left" onClick={goToPreviousNode} />
+        <div className="node-touch-zone right" onClick={goToNextNode} />
       </div>
 
-      <div className="synthesis-bottom-bar">
-        <textarea
-          ref={synthesisRef}
-          className="synthesis-textarea"
-          value={synthesis}
-          onChange={handleSynthesisChange}
-          placeholder="Write your synthesis here..."
-        />
-      </div>
+      {/* Expand modal */}
+      {expandMode && (
+        <div className="modal-overlay" onClick={handleCloseExpandMode}>
+          <div className="expand-modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Add Text to "{cognition.title}"</h3>
+              <button className="close-btn" onClick={handleCloseExpandMode}>×</button>
+            </div>
+            <div className="modal-body">
+              <textarea
+                className="expand-textarea"
+                value={newText}
+                onChange={(e) => setNewText(e.target.value)}
+                placeholder="Enter text to append..."
+              />
+            </div>
+            <div className="modal-footer">
+              <button className="cancel-btn" onClick={handleCloseExpandMode}>Cancel</button>
+              <button 
+                className="append-btn" 
+                onClick={handleAppendText}
+                disabled={appendingText || !newText.trim()}
+              >
+                {appendingText ? "Adding..." : "Append Text"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast notification */}
+      {showToast && (
+        <div className="toast-notification">
+          {toastMessage}
+        </div>
+      )}
     </div>
   );
 }
 
 export default ReadingMode;
-
-/* Minimal CSS for selector-group for inline-flex and margin */
-// (If you don't use CSS-in-JS, add this to ReadingMode.css)
-// .selector-group {
-//   display: inline-flex;
-//   align-items: center;
-//   margin-right: 12px;
-//   gap: 4px;
-// }
