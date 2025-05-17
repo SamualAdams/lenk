@@ -132,7 +132,7 @@ function InputMode() {
   };
 
   const handleCollectiveClick = () => {
-    alert('Collective feature coming soon!');
+    navigate('/collective');
   };
 
   const handleArcsClick = () => {

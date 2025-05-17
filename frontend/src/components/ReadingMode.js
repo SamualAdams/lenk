@@ -208,11 +208,6 @@ function ReadingMode() {
 
   // Timeline click handler
   const handleTimelineClick = (index, event) => {
-    // Save current synthesis before moving
-    if (!synthesisSaved && synthesis) {
-      debouncedSaveSynthesis.flush();
-    }
-    
     if (event && event.shiftKey) {
       // Handle multi-selection with shift key
       const newSelection = new Set(selectedIndices);
