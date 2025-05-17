@@ -65,6 +65,82 @@ class CognitionViewSet(viewsets.ModelViewSet):
             'status': 'success',
             'duplicated_cognition_id': duplicated.id
         }, status=status.HTTP_201_CREATED)
+
+    @action(detail=True, methods=['post'])
+    def process_text(self, request, pk=None):
+        cognition = self.get_object()
+        text = cognition.raw_content
+
+        # Parse text into paragraphs/nodes
+        paragraphs = [p.strip() for p in re.split(r'\n\n+', text) if p.strip()]
+
+        # If we have very few paragraphs, try splitting by single newlines
+        if len(paragraphs) <= 1:
+            paragraphs = [p.strip() for p in text.split('\n') if p.strip()]
+
+            # If still few paragraphs, try splitting by sentences
+            if len(paragraphs) <= 3:
+                sentences = re.split(r'\.(?=\s)', text)
+                paragraphs = []
+                current_para = []
+
+                for sentence in sentences:
+                    sentence = sentence.strip()
+                    if not sentence:
+                        continue
+
+                    if not sentence.endswith(('.', '?', '!', ':', ';')):
+                        if len(sentence) > 30 or any(p in sentence for p in ',.;:?!'):
+                            sentence += '.'
+
+                    current_para.append(sentence)
+                    # Create new paragraph every 3-5 sentences
+                    if len(current_para) >= 3 + (hash(sentence) % 3):
+                        paragraphs.append(' '.join(current_para))
+                        current_para = []
+
+                # Add remaining sentences
+                if current_para:
+                    paragraphs.append(' '.join(current_para))
+
+        merged = []
+        skip_next = False
+        for i in range(len(paragraphs)):
+            if skip_next:
+                skip_next = False
+                continue
+            current = paragraphs[i].strip()
+            next_para = paragraphs[i + 1].strip() if i + 1 < len(paragraphs) else None
+            if (
+                len(current) < 60
+                and not re.search(r'[.!?;:]$', current)
+                and next_para
+            ):
+                merged.append(f"{current} {next_para}")
+                skip_next = True
+            else:
+                merged.append(current)
+        paragraphs = merged
+
+        # Delete existing nodes
+        cognition.nodes.all().delete()
+
+        # Create new nodes
+        for i, paragraph in enumerate(paragraphs):
+            cleaned = re.sub(r'[^a-zA-Z0-9]', '', paragraph)
+            if not cleaned.strip():
+                continue
+            Node.objects.create(
+                cognition=cognition,
+                content=paragraph,
+                position=i,
+                character_count=len(paragraph)
+            )
+
+        return Response({
+            'status': 'success',
+            'nodes_created': len(paragraphs)
+        })
     permission_classes = [IsAuthenticated, IsOwnerOrReadOnlyIfPublic]
     def get_queryset(self):
         user = self.request.user
