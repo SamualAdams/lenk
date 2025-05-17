@@ -145,8 +145,11 @@ STATIC_URL = '/static/'
 TOKEN_EXPIRY_TIME = 7  # Tokens expire after 7 days
 
 # CORS Settings
-CORS_ALLOW_ALL_ORIGINS = True
+CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = True
+CORS_ORIGIN_WHITELIST = [
+    'http://localhost:3000',
+]
 CORS_ALLOW_METHODS = [
     'DELETE',
     'GET',
@@ -156,7 +159,6 @@ CORS_ALLOW_METHODS = [
     'PUT',
 ]
 
-# Add this to disable CSRF for API endpoints (be cautious with this in production)
 CSRF_TRUSTED_ORIGINS = ['http://localhost:3000']
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [

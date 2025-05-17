@@ -7,6 +7,7 @@ import Login from './components/Login';
 import Register from './components/Register';
 import ProtectedRoute from './components/ProtectedRoute';
 import { AuthProvider } from './context/AuthContext';
+import CollectiveView from './components/CollectiveView';
 import './App.css';
 
 function App() {
@@ -29,6 +30,11 @@ function App() {
             <Route path="/cognition/:id" element={
               <ProtectedRoute>
                 <ReadingMode />
+              </ProtectedRoute>
+            } />
+            <Route path="/collective" element={
+              <ProtectedRoute>
+                <CollectiveView />
               </ProtectedRoute>
             } />
           </Routes>

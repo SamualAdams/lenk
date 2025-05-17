@@ -1,7 +1,7 @@
 
 
 import { createStore, applyMiddleware, compose } from 'redux';
-import thunk from 'redux-thunk';
+import { thunk } from 'redux-thunk';
 import rootReducer from './reducers';
 
 // Enable Redux DevTools if available, else use normal compose

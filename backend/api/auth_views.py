@@ -1,4 +1,7 @@
 
+from django.views.decorators.csrf import csrf_exempt
+from rest_framework.decorators import authentication_classes
+
 
 
 from django.contrib.auth import authenticate
@@ -10,6 +13,8 @@ from rest_framework.response import Response
 from rest_framework.authtoken.models import Token
 
 @api_view(['POST'])
+@csrf_exempt
+@authentication_classes([])
 @permission_classes([AllowAny])
 def register_user(request):
     username = request.data.get('username')
@@ -44,6 +49,8 @@ def register_user(request):
     }, status=status.HTTP_201_CREATED)
 
 @api_view(['POST'])
+@csrf_exempt
+@authentication_classes([])
 @permission_classes([AllowAny])
 def login_user(request):
     username = request.data.get('username')

@@ -12,8 +12,16 @@ const CollectiveView = () => {
   const [followingOnly, setFollowingOnly] = useState(false);
   
   useEffect(() => {
+    console.log("Fetching collective with followingOnly:", followingOnly);
     dispatch(fetchCollective(followingOnly));
   }, [dispatch, followingOnly]);
+
+  console.log("Collective Component - Current state:", { 
+    cognitions, 
+    loading, 
+    error, 
+    cognitionsCount: cognitions?.length || 0 
+  });
   
   const toggleFollowingOnly = () => {
     setFollowingOnly(!followingOnly);

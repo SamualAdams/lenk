@@ -5,6 +5,7 @@ import * as types from '../actionTypes';
 
 // Fetch collective feed
 export const fetchCollective = (followingOnly = false) => async (dispatch) => {
+  console.log("fetchCollective Redux action called with followingOnly:", followingOnly);
   dispatch({ type: types.FETCH_COLLECTIVE_REQUEST });
   
   try {

@@ -1,5 +1,5 @@
 import React, { createContext, useState, useEffect, useContext } from 'react';
-import axiosInstance from '../axiosConfig';
+import axiosInstance, { registerOrLogin } from '../axiosConfig';
 
 const AuthContext = createContext();
 
@@ -72,7 +72,7 @@ export function AuthProvider({ children }) {
   const login = async (username, password) => {
     try {
       setError('');
-      const response = await axiosInstance.post('/auth/login/', { username, password });
+      const response = await registerOrLogin('/auth/login/', { username, password });
       const { token, ...userData } = response.data;
       const expiry = new Date();
       expiry.setDate(expiry.getDate() + 7);
@@ -91,7 +91,7 @@ export function AuthProvider({ children }) {
   const register = async (username, email, password) => {
     try {
       setError('');
-      const response = await axiosInstance.post('/auth/register/', { username, email, password });
+      const response = await registerOrLogin('/auth/register/', { username, email, password });
       const { token, ...userData } = response.data;
       const expiry = new Date();
       expiry.setDate(expiry.getDate() + 7);

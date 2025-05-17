@@ -18,6 +18,8 @@ from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view, action, permission_classes
 from rest_framework.permissions import AllowAny
 from rest_framework.permissions import IsAuthenticated
+from .permissions import IsOwnerOrReadOnlyIfPublic
+from django.db import models
 
 @api_view(['GET'])
 def hello_world(request):
@@ -63,8 +65,42 @@ class CognitionViewSet(viewsets.ModelViewSet):
             'status': 'success',
             'duplicated_cognition_id': duplicated.id
         }, status=status.HTTP_201_CREATED)
-    queryset = Cognition.objects.all().order_by('-created_at')
-    permission_classes = [IsAuthenticated]
+    permission_classes = [IsAuthenticated, IsOwnerOrReadOnlyIfPublic]
+    def get_queryset(self):
+        user = self.request.user
+        if self.action == 'list':
+            return Cognition.objects.filter(user=user).order_by('-created_at')
+        return Cognition.objects.filter(
+            models.Q(user=user) | models.Q(is_public=True)
+        ).order_by('-created_at')
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.user != request.user and not instance.is_public:
+            return Response(
+                {'error': 'You do not have permission to view this cognition'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.user != request.user:
+            return Response({'error': 'You do not have permission to edit this cognition'}, status=status.HTTP_403_FORBIDDEN)
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.user != request.user:
+            return Response({'error': 'You do not have permission to edit this cognition'}, status=status.HTTP_403_FORBIDDEN)
+        return super().partial_update(request, *args, **kwargs)
+
+    def destroy(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.user != request.user:
+            return Response({'error': 'You do not have permission to delete this cognition'}, status=status.HTTP_403_FORBIDDEN)
+        return super().destroy(request, *args, **kwargs)
 
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -103,9 +139,12 @@ class CognitionViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=['get'])
     def collective(self, request):
+        print(f"Collective endpoint called by user: {request.user.username}")
+        queryset = Cognition.objects.filter(is_public=True).order_by('-share_date')
+        print(f"Public cognitions count: {queryset.count()}")
+        print(f"Query SQL: {queryset.query}")
         following_profiles = request.user.profile.following.all()
         following_users = [profile.user.id for profile in following_profiles]
-        queryset = Cognition.objects.filter(is_public=True).order_by('-share_date')
         following_only = request.query_params.get('following_only', 'false').lower() == 'true'
         if following_only and following_users:
             queryset = queryset.filter(user__in=following_users)
@@ -337,14 +376,43 @@ class UserProfileViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class NodeViewSet(viewsets.ModelViewSet):
-    queryset = Node.objects.all()
     serializer_class = NodeSerializer
     http_method_names = ['get', 'post', 'patch', 'delete']
     permission_classes = [IsAuthenticated]
 
+    def get_queryset(self):
+        user = self.request.user
+        return Node.objects.filter(
+            models.Q(cognition__user=user) | models.Q(cognition__is_public=True)
+        )
+
+    def retrieve(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.cognition.user != request.user and not instance.cognition.is_public:
+            return Response(
+                {'error': 'You do not have permission to view this node'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        serializer = self.get_serializer(instance)
+        return Response(serializer.data)
+
+    def update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.cognition.user != request.user:
+            return Response({'error': 'You do not have permission to edit this node'}, status=status.HTTP_403_FORBIDDEN)
+        return super().update(request, *args, **kwargs)
+
+    def partial_update(self, request, *args, **kwargs):
+        instance = self.get_object()
+        if instance.cognition.user != request.user:
+            return Response({'error': 'You do not have permission to edit this node'}, status=status.HTTP_403_FORBIDDEN)
+        return super().partial_update(request, *args, **kwargs)
+
     def destroy(self, request, *args, **kwargs):
-        node = self.get_object()
-        node.delete()
+        instance = self.get_object()
+        if instance.cognition.user != request.user:
+            return Response({'error': 'You do not have permission to delete this node'}, status=status.HTTP_403_FORBIDDEN)
+        instance.delete()
         return Response({'status': 'deleted'}, status=status.HTTP_204_NO_CONTENT)
 
     @action(detail=True, methods=['post'])
@@ -355,21 +423,26 @@ class NodeViewSet(viewsets.ModelViewSet):
         return Response({'status': 'success', 'is_illuminated': node.is_illuminated})
 
 class SynthesisViewSet(viewsets.ModelViewSet):
-    queryset = Synthesis.objects.all()
     serializer_class = SynthesisSerializer
     permission_classes = [IsAuthenticated]
-    
+
+    def get_queryset(self):
+        user = self.request.user
+        return Synthesis.objects.filter(
+            models.Q(node__cognition__user=user) | models.Q(node__cognition__is_public=True)
+        )
+
     @action(detail=False, methods=['post'])
     def add_or_update(self, request):
         node_id = request.data.get('node_id')
         content = request.data.get('content')
-        
+
         if not node_id:
             return Response(
                 {'error': 'node_id is required'}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         try:
             node = Node.objects.get(id=node_id)
             synthesis, created = Synthesis.objects.update_or_create(
@@ -382,7 +455,7 @@ class SynthesisViewSet(viewsets.ModelViewSet):
                 {'error': 'Node not found'}, 
                 status=status.HTTP_404_NOT_FOUND
             )
-    
+
     @action(detail=True, methods=['post'])
     def add_preset(self, request, pk=None):
         """Add a preset response to a synthesis"""
@@ -390,13 +463,13 @@ class SynthesisViewSet(viewsets.ModelViewSet):
         preset_id = request.data.get('preset_id')
         position = request.data.get('position', 
                                    synthesis.preset_links.count())  # Default to end
-        
+
         if not preset_id:
             return Response(
                 {'error': 'preset_id is required'}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         try:
             preset = PresetResponse.objects.get(id=preset_id)
             link, created = SynthesisPresetLink.objects.get_or_create(
@@ -404,47 +477,47 @@ class SynthesisViewSet(viewsets.ModelViewSet):
                 preset_response=preset,
                 defaults={'position': position}
             )
-            
+
             if not created:
                 link.position = position
                 link.save()
-            
+
             # Fix positions of other links if needed
             self._reorder_preset_links(synthesis)
-            
+
             return Response(SynthesisSerializer(synthesis).data)
         except PresetResponse.DoesNotExist:
             return Response(
                 {'error': 'Preset response not found'}, 
                 status=status.HTTP_404_NOT_FOUND
             )
-    
+
     @action(detail=True, methods=['post'])
     def remove_preset(self, request, pk=None):
         """Remove a preset response from a synthesis"""
         synthesis = self.get_object()
         preset_id = request.data.get('preset_id')
-        
+
         if not preset_id:
             return Response(
                 {'error': 'preset_id is required'}, 
                 status=status.HTTP_400_BAD_REQUEST
             )
-        
+
         try:
             link = synthesis.preset_links.get(preset_response_id=preset_id)
             link.delete()
-            
+
             # Fix positions of other links
             self._reorder_preset_links(synthesis)
-            
+
             return Response(SynthesisSerializer(synthesis).data)
         except SynthesisPresetLink.DoesNotExist:
             return Response(
                 {'error': 'Preset not found in this synthesis'}, 
                 status=status.HTTP_404_NOT_FOUND
             )
-    
+
     def _reorder_preset_links(self, synthesis):
         """Helper to ensure preset links have sequential positions"""
         for i, link in enumerate(synthesis.preset_links.all().order_by('position')):

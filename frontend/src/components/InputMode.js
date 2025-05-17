@@ -3,8 +3,10 @@ import { useNavigate, Link } from 'react-router-dom';
 import axiosInstance from '../axiosConfig';
 import './InputMode.css';
 import { FaStar, FaRegStar, FaTrashAlt, FaCopy } from 'react-icons/fa';
+import { useAuth } from '../context/AuthContext';
 
 function InputMode() {
+  const { currentUser } = useAuth();
   const [cognitions, setCognitions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState('');
@@ -159,11 +161,13 @@ function InputMode() {
                     <li key={cognition.id} className="cognition-item">
                       <div className="cognition-row">
                         <Link to={`/cognition/${cognition.id}`} className="cognition-title">{cognition.title}</Link>
-                        <div className="button-group">
-                          <button className="delete-btn" onClick={(e) => handleDeleteCognition(cognition.id, e)} aria-label={`Delete ${cognition.title}`}><FaTrashAlt /></button>
-                          <button className="duplicate-btn" onClick={(e) => handleDuplicateCognition(cognition.id, e)} aria-label={`Duplicate ${cognition.title}`}><FaCopy /></button>
-                          <button className="template-btn" data-starred={cognition.is_starred} onClick={(e) => handleStarCognition(cognition.id, e)} aria-label={`Toggle star for ${cognition.title}`}>{cognition.is_starred ? <FaStar /> : <FaRegStar />}</button>
-                        </div>
+                        {((cognition.username && cognition.username === currentUser?.username) || (cognition.user && cognition.user === currentUser?.id)) && (
+                          <div className="button-group">
+                            <button className="delete-btn" onClick={(e) => handleDeleteCognition(cognition.id, e)} aria-label={`Delete ${cognition.title}`}><FaTrashAlt /></button>
+                            <button className="duplicate-btn" onClick={(e) => handleDuplicateCognition(cognition.id, e)} aria-label={`Duplicate ${cognition.title}`}><FaCopy /></button>
+                            <button className="template-btn" data-starred={cognition.is_starred} onClick={(e) => handleStarCognition(cognition.id, e)} aria-label={`Toggle star for ${cognition.title}`}>{cognition.is_starred ? <FaStar /> : <FaRegStar />}</button>
+                          </div>
+                        )}
                       </div>
                     </li>
                   ))}
@@ -176,11 +180,13 @@ function InputMode() {
                     <li key={cognition.id} className="cognition-item">
                       <div className="cognition-row">
                         <Link to={`/cognition/${cognition.id}`} className="cognition-title">{cognition.title}</Link>
-                        <div className="button-group">
-                          <button className="delete-btn" onClick={(e) => handleDeleteCognition(cognition.id, e)} aria-label={`Delete ${cognition.title}`}><FaTrashAlt /></button>
-                          <button className="duplicate-btn" onClick={(e) => handleDuplicateCognition(cognition.id, e)} aria-label={`Duplicate ${cognition.title}`}><FaCopy /></button>
-                          <button className="template-btn" data-starred={cognition.is_starred} onClick={(e) => handleStarCognition(cognition.id, e)} aria-label={`Toggle star for ${cognition.title}`}>{cognition.is_starred ? <FaStar /> : <FaRegStar />}</button>
-                        </div>
+                        {((cognition.username && cognition.username === currentUser?.username) || (cognition.user && cognition.user === currentUser?.id)) && (
+                          <div className="button-group">
+                            <button className="delete-btn" onClick={(e) => handleDeleteCognition(cognition.id, e)} aria-label={`Delete ${cognition.title}`}><FaTrashAlt /></button>
+                            <button className="duplicate-btn" onClick={(e) => handleDuplicateCognition(cognition.id, e)} aria-label={`Duplicate ${cognition.title}`}><FaCopy /></button>
+                            <button className="template-btn" data-starred={cognition.is_starred} onClick={(e) => handleStarCognition(cognition.id, e)} aria-label={`Toggle star for ${cognition.title}`}>{cognition.is_starred ? <FaStar /> : <FaRegStar />}</button>
+                          </div>
+                        )}
                       </div>
                     </li>
                   ))}

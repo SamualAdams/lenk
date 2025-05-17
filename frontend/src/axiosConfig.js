@@ -58,3 +58,17 @@ axiosInstance.interceptors.response.use(
 );
 
 export default axiosInstance;
+
+// Special axios instance for registration and login (no credentials/cookies sent)
+export const registerOrLogin = async (endpoint, data) => {
+  const instance = axios.create({
+    baseURL: process.env.NODE_ENV === 'production' ? '/api' : 'http://localhost:8000/api',
+    timeout: 15000,
+    headers: {
+      'Content-Type': 'application/json',
+      'Accept': 'application/json',
+    },
+    withCredentials: false // Do NOT send cookies/credentials for auth endpoints
+  });
+  return instance.post(endpoint, data);
+};

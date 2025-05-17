@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useAuth } from "../context/AuthContext";
 import debounce from 'lodash.debounce';
 import { useParams, useNavigate } from "react-router-dom";
 import { FaTrashAlt, FaHome, FaExpandArrowsAlt, FaCheck, FaCopy, 
@@ -29,6 +30,14 @@ function ReadingMode() {
   const [nodeText, setNodeText] = useState("");
   const textareaRef = useRef(null);
   const synthesisRef = useRef(null);
+
+  // Auth context and owner check
+  const { currentUser } = useAuth();
+  const isOwner = cognition && currentUser && (
+    cognition.username === currentUser.username ||
+    cognition.user_id === currentUser.user_id ||
+    cognition.user === currentUser.user_id // covers various possible field names
+  );
 
   // Toast message helper
   const displayToast = (message) => {
@@ -375,29 +384,35 @@ function ReadingMode() {
             <FaHome />
           </button>
           <h1 className="cognition-title">{cognition.title}</h1>
-          <button 
-            className="icon-button star-btn" 
-            onClick={toggleStar}
-            title={cognition.is_starred ? "Unstar" : "Star"}
-          >
-            {cognition.is_starred ? <FaStar /> : <FaRegStar />}
-          </button>
+          {isOwner && (
+            <button 
+              className="icon-button star-btn" 
+              onClick={toggleStar}
+              title={cognition.is_starred ? "Unstar" : "Star"}
+            >
+              {cognition.is_starred ? <FaStar /> : <FaRegStar />}
+            </button>
+          )}
         </div>
         <div className="header-right">
-          <button 
-            className="icon-button expand-btn" 
-            onClick={handleOpenExpandMode}
-            title="Add text"
-          >
-            <FaExpandArrowsAlt />
-          </button>
-          <button 
-            className="icon-button delete-btn" 
-            onClick={handleDeleteCognition}
-            title="Delete"
-          >
-            <FaTrashAlt />
-          </button>
+          {isOwner && (
+            <>
+              <button 
+                className="icon-button expand-btn" 
+                onClick={handleOpenExpandMode}
+                title="Add text"
+              >
+                <FaExpandArrowsAlt />
+              </button>
+              <button 
+                className="icon-button delete-btn" 
+                onClick={handleDeleteCognition}
+                title="Delete"
+              >
+                <FaTrashAlt />
+              </button>
+            </>
+          )}
         </div>
       </header>
 
@@ -428,13 +443,15 @@ function ReadingMode() {
             >
               <FaStar className="illumination-indicator" />
             </button>
-            <button 
-              className="icon-button edit-btn" 
-              onClick={() => setEditMode(!editMode)}
-              title={editMode ? "View mode" : "Edit mode"}
-            >
-              {editMode ? "View" : "Edit"}
-            </button>
+            {isOwner && (
+              <button 
+                className="icon-button edit-btn" 
+                onClick={() => setEditMode(!editMode)}
+                title={editMode ? "View mode" : "Edit mode"}
+              >
+                {editMode ? "View" : "Edit"}
+              </button>
+            )}
             <button 
               className="icon-button copy-btn" 
               onClick={handleCopyNode}
@@ -488,8 +505,9 @@ function ReadingMode() {
             className="synthesis-textarea"
             style={{ flex: 1, minHeight: 0 }}
             value={synthesis}
-            onChange={handleSynthesisChange}
+            onChange={isOwner ? handleSynthesisChange : undefined}
             placeholder="Write your synthesis here..."
+            readOnly={!isOwner}
           />
         </div>
       </main>

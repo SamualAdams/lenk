@@ -18,12 +18,12 @@ urlpatterns = [
 
 # Then add router URLs
 router = DefaultRouter()
-router.register(r'cognitions', views.CognitionViewSet)
-router.register(r'nodes', views.NodeViewSet)
-router.register(r'syntheses', views.SynthesisViewSet)
-router.register(r'preset-responses', views.PresetResponseViewSet)
-router.register(r'arcs', views.ArcViewSet)
-router.register(r'profiles', views.UserProfileViewSet)
+router.register(r'cognitions', views.CognitionViewSet, basename='cognition')
+router.register(r'nodes', views.NodeViewSet, basename='node')
+router.register(r'syntheses', views.SynthesisViewSet, basename='synthesis')
+router.register(r'preset-responses', views.PresetResponseViewSet, basename='presetresponse')
+router.register(r'arcs', views.ArcViewSet, basename='arc')
+router.register(r'profiles', views.UserProfileViewSet, basename='profile')
 
 # Append router URLs to the urlpatterns
 urlpatterns += router.urls
