@@ -13,6 +13,7 @@ import re
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view, action, permission_classes
 from rest_framework.permissions import AllowAny
+from rest_framework.permissions import IsAuthenticated
 
 @api_view(['GET'])
 def hello_world(request):
@@ -59,7 +60,7 @@ class CognitionViewSet(viewsets.ModelViewSet):
             'duplicated_cognition_id': duplicated.id
         }, status=status.HTTP_201_CREATED)
     queryset = Cognition.objects.all().order_by('-created_at')
-    permission_classes = [permissions.AllowAny]  # Explicitly set permissions
+    permission_classes = [IsAuthenticated]
     
     def get_serializer_class(self):
         if self.action == 'retrieve':
@@ -255,6 +256,7 @@ class NodeViewSet(viewsets.ModelViewSet):
     queryset = Node.objects.all()
     serializer_class = NodeSerializer
     http_method_names = ['get', 'post', 'patch', 'delete']
+    permission_classes = [IsAuthenticated]
 
     def destroy(self, request, *args, **kwargs):
         node = self.get_object()
@@ -271,6 +273,7 @@ class NodeViewSet(viewsets.ModelViewSet):
 class SynthesisViewSet(viewsets.ModelViewSet):
     queryset = Synthesis.objects.all()
     serializer_class = SynthesisSerializer
+    permission_classes = [IsAuthenticated]
     
     @action(detail=False, methods=['post'])
     def add_or_update(self, request):
@@ -368,6 +371,7 @@ class SynthesisViewSet(viewsets.ModelViewSet):
 class PresetResponseViewSet(viewsets.ModelViewSet):
     queryset = PresetResponse.objects.all().order_by('category', 'title')
     serializer_class = PresetResponseSerializer
+    permission_classes = [IsAuthenticated]
     
     @action(detail=False, methods=['get'])
     def by_category(self, request):
@@ -386,6 +390,7 @@ class PresetResponseViewSet(viewsets.ModelViewSet):
 class ArcViewSet(viewsets.ModelViewSet):
     queryset = Arc.objects.all()
     serializer_class = ArcSerializer
+    permission_classes = [IsAuthenticated]
 @api_view(['POST'])
 @csrf_exempt
 @permission_classes([AllowAny])

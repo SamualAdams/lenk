@@ -12,6 +12,12 @@ const axiosInstance = axios.create({
   withCredentials: true
 });
 
+// Attach auth token if present
+const token = localStorage.getItem('token');
+if (token) {
+  axiosInstance.defaults.headers.common['Authorization'] = `Token ${token}`;
+}
+
 // Add request interceptor for debugging
 axiosInstance.interceptors.request.use(
   config => {
