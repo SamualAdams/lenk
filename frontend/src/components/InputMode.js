@@ -11,6 +11,10 @@ function InputMode() {
   const [uploading, setUploading] = useState(false);
   const navigate = useNavigate();
 
+  const [showNewCognitionModal, setShowNewCognitionModal] = useState(false);
+  const [newCognitionText, setNewCognitionText] = useState('');
+  const [creatingCognition, setCreatingCognition] = useState(false);
+
   useEffect(() => {
     fetchCognitions();
   }, []);
@@ -70,6 +74,32 @@ function InputMode() {
     }
   };
 
+  const handleNewCognitionClick = () => {
+    setShowNewCognitionModal(true);
+  };
+
+  const handleCreateCognition = async () => {
+    setCreatingCognition(true);
+    try {
+      // Create the cognition with initial text
+      const response = await axiosInstance.post('/cognitions/', {
+        title: 'Untitled Cognition',
+        raw_content: newCognitionText,
+        is_starred: false,
+      });
+      // Process the raw content into nodes
+      await axiosInstance.post(`/cognitions/${response.data.id}/process_text/`);
+      setCognitions(prev => [...prev, response.data]);
+      setShowNewCognitionModal(false);
+      setNewCognitionText('');
+      navigate(`/cognition/${response.data.id}`);
+    } catch (err) {
+      alert('Failed to create new cognition.');
+    } finally {
+      setCreatingCognition(false);
+    }
+  };
+
   const handleNewCognition = async () => {
     try {
       const response = await axiosInstance.post('/cognitions/', { title: 'Untitled Cognition', content: '', is_starred: false });
@@ -97,6 +127,14 @@ function InputMode() {
       setUploading(false);
       e.target.value = null;
     }
+  };
+
+  const handleCollectiveClick = () => {
+    alert('Collective feature coming soon!');
+  };
+
+  const handleArcsClick = () => {
+    alert('Arcs feature coming soon!');
   };
 
   const starredCognitions = cognitions.filter(c => c.is_starred);
@@ -154,12 +192,41 @@ function InputMode() {
       </main>
 
       <footer className="mobile-footer">
-        <button className="collective-btn">Collective</button>
+        <button className="collective-btn" onClick={handleCollectiveClick}>Collective</button>
         <div className="bottom-button-row">
-          <button className="arcs-btn">Arcs</button>
-          <button className="new-btn" onClick={handleNewCognition}>New</button>
+          <button className="arcs-btn" onClick={handleArcsClick}>Arcs</button>
+          <button className="new-btn" onClick={handleNewCognitionClick}>New</button>
         </div>
       </footer>
+
+      {showNewCognitionModal && (
+        <div className="modal-overlay" onClick={() => setShowNewCognitionModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h3>Create New Cognition</h3>
+              <button className="close-btn" onClick={() => setShowNewCognitionModal(false)}>×</button>
+            </div>
+            <div className="modal-body">
+              <textarea
+                className="cognition-textarea"
+                value={newCognitionText}
+                onChange={(e) => setNewCognitionText(e.target.value)}
+                placeholder="Paste or type your text here..."
+              />
+            </div>
+            <div className="modal-footer">
+              <button className="cancel-btn" onClick={() => setShowNewCognitionModal(false)}>Cancel</button>
+              <button
+                className="create-btn"
+                onClick={handleCreateCognition}
+                disabled={creatingCognition || !newCognitionText.trim()}
+              >
+                {creatingCognition ? 'Creating...' : 'Create'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
