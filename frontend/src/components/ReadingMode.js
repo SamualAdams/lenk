@@ -12,6 +12,7 @@ function ReadingMode() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [cognition, setCognition] = useState(null);
+  const [titleInput, setTitleInput] = useState("");
   const [nodes, setNodes] = useState([]);
   const [currentNodeIndex, setCurrentNodeIndex] = useState(0);
   const [authorSynthesis, setAuthorSynthesis] = useState("");
@@ -182,6 +183,7 @@ function ReadingMode() {
       setError(null);
       const response = await axiosInstance.get(`/cognitions/${id}/?include_syntheses=true`);
       setCognition(response.data);
+      setTitleInput(response.data.title);
       setNodes(response.data.nodes || []);
       setIsLoading(false);
     } catch (err) {
@@ -189,6 +191,23 @@ function ReadingMode() {
       setIsLoading(false);
     }
   }, [id]);
+  useEffect(() => {
+    if (cognition && cognition.title) setTitleInput(cognition.title);
+  }, [cognition]);
+
+  const debouncedSaveTitle = useCallback(
+    debounce(async (newTitle) => {
+      console.log("debouncedSaveTitle called", cognition?.id, newTitle);
+      try {
+        await axiosInstance.patch(`/cognitions/${id}/`, { title: newTitle });
+        setCognition(cog => ({ ...cog, title: newTitle }));
+        displayToast("Title updated");
+      } catch (err) {
+        setError("Failed to update title");
+      }
+    }, 1000),
+    [id, cognition]
+  );
 
   // Toggle cognition star status
   const toggleStar = async () => {
@@ -408,16 +427,11 @@ function ReadingMode() {
           {isOwner ? (
             <input
               className="cognition-title-input"
-              value={cognition.title}
-              onChange={async e => {
-                const newTitle = e.target.value;
-                setCognition(cog => ({ ...cog, title: newTitle }));
-                try {
-                  await axiosInstance.patch(`/cognitions/${id}/`, { title: newTitle });
-                  displayToast("Title updated");
-                } catch {
-                  setError("Failed to update title");
-                }
+              value={titleInput}
+              onChange={e => {
+                console.log("Input changed", cognition?.id, e.target.value);
+                setTitleInput(e.target.value);
+                debouncedSaveTitle(e.target.value);
               }}
               style={{ fontSize: '2rem', fontWeight: 'bold', border: 0, background: 'none', outline: 'none', width: '100%' }}
             />
