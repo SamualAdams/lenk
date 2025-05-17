@@ -405,7 +405,25 @@ function ReadingMode() {
           >
             <FaHome />
           </button>
-          <h1 className="cognition-title">{cognition.title}</h1>
+          {isOwner ? (
+            <input
+              className="cognition-title-input"
+              value={cognition.title}
+              onChange={async e => {
+                const newTitle = e.target.value;
+                setCognition(cog => ({ ...cog, title: newTitle }));
+                try {
+                  await axiosInstance.patch(`/cognitions/${id}/`, { title: newTitle });
+                  displayToast("Title updated");
+                } catch {
+                  setError("Failed to update title");
+                }
+              }}
+              style={{ fontSize: '2rem', fontWeight: 'bold', border: 0, background: 'none', outline: 'none', width: '100%' }}
+            />
+          ) : (
+            <h1 className="cognition-title">{cognition.title}</h1>
+          )}
           {isOwner && (
             <button 
               className="icon-button star-btn" 

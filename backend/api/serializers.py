@@ -123,10 +123,12 @@ class CognitionSerializer(serializers.ModelSerializer):
         return obj.nodes.count()
 
 class CognitionDetailSerializer(CognitionSerializer):
+    user_id = serializers.ReadOnlyField(source='user.id')
+    username = serializers.ReadOnlyField(source='user.username')
     nodes = NodeSerializer(many=True, read_only=True)
     
     class Meta(CognitionSerializer.Meta):
-        fields = CognitionSerializer.Meta.fields + ['nodes']
+        fields = CognitionSerializer.Meta.fields + ['user_id', 'username', 'nodes']
 
 class ArcSerializer(serializers.ModelSerializer):
     class Meta:
