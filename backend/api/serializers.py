@@ -1,6 +1,41 @@
 # api/serializers.py
 from rest_framework import serializers
-from .models import Cognition, Node, Synthesis, PresetResponse, SynthesisPresetLink, Arc
+from django.contrib.auth.models import User
+from .models import Cognition, Node, Synthesis, PresetResponse, SynthesisPresetLink, Arc, UserProfile
+
+class UserProfileSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+    follower_count = serializers.SerializerMethodField()
+    following_count = serializers.SerializerMethodField()
+    is_following = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = UserProfile
+        fields = ['id', 'username', 'bio', 'follower_count', 'following_count', 'is_following']
+    
+    def get_follower_count(self, obj):
+        return obj.followers.count()
+    
+    def get_following_count(self, obj):
+        return obj.following.count()
+    
+    def get_is_following(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return request.user.profile.following.filter(pk=obj.pk).exists()
+        return False
+
+class CognitionCollectiveSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+    nodes_count = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Cognition
+        fields = ['id', 'title', 'username', 'is_public', 'share_date', 
+                  'created_at', 'updated_at', 'nodes_count']
+    
+    def get_nodes_count(self, obj):
+        return obj.nodes.count()
 
 class PresetResponseSerializer(serializers.ModelSerializer):
     class Meta:

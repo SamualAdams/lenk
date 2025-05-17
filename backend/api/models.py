@@ -1,5 +1,6 @@
 # api/models.py
 from django.db import models
+from django.contrib.auth.models import User
 
 class Cognition(models.Model):
     title = models.CharField(max_length=200)
@@ -7,7 +8,9 @@ class Cognition(models.Model):
     is_starred = models.BooleanField(default=False, help_text="Indicates if this cognition is starred for quick access")
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    # user = models.ForeignKey(User, on_delete=models.CASCADE)  # For future auth implementation
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='cognitions')
+    is_public = models.BooleanField(default=False, help_text="Whether this cognition is shared publicly")
+    share_date = models.DateTimeField(null=True, blank=True, help_text="When this cognition was shared")
     
     def __str__(self):
         return self.title
@@ -103,3 +106,27 @@ class Arc(models.Model):
     
     def __str__(self):
         return f"Arc: {self.source_node} -> {self.target_node} ({self.arc_type})"
+# UserProfile model
+class UserProfile(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
+    bio = models.TextField(blank=True, null=True)
+    following = models.ManyToManyField('self', symmetrical=False, related_name='followers', blank=True)
+    
+    def __str__(self):
+        return f"{self.user.username}'s profile"
+    
+    def follow(self, profile):
+        if profile != self:
+            self.following.add(profile)
+    
+    def unfollow(self, profile):
+        self.following.remove(profile)
+    
+    def is_following(self, profile):
+        return self.following.filter(pk=profile.pk).exists()
+    
+    def get_followers(self):
+        return self.followers.all()
+    
+    def get_following(self):
+        return self.following.all()

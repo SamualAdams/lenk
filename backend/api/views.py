@@ -3,11 +3,15 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, action
 from rest_framework.response import Response
 from .models import Cognition, Node, Synthesis, PresetResponse, SynthesisPresetLink, Arc
+from .models import UserProfile
 from .serializers import (
     CognitionSerializer, CognitionDetailSerializer, 
     NodeSerializer, SynthesisSerializer, PresetResponseSerializer,
     ArcSerializer
 )
+from .serializers import UserProfileSerializer, CognitionCollectiveSerializer
+from django.utils import timezone
+from rest_framework import filters
 import re
 
 from django.views.decorators.csrf import csrf_exempt
@@ -61,22 +65,102 @@ class CognitionViewSet(viewsets.ModelViewSet):
         }, status=status.HTTP_201_CREATED)
     queryset = Cognition.objects.all().order_by('-created_at')
     permission_classes = [IsAuthenticated]
-    
+
     def get_serializer_class(self):
         if self.action == 'retrieve':
             return CognitionDetailSerializer
         return CognitionSerializer
-    
+
     def create(self, request, *args, **kwargs):
         # Log the incoming request data for debugging
         print(f"Received data: {request.data}")
-        
+
         # Create the cognition
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         self.perform_create(serializer)
         headers = self.get_success_headers(serializer.data)
         return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
+    def perform_create(self, serializer):
+        serializer.save(user=self.request.user)
+    @action(detail=True, methods=['post'])
+    def toggle_share(self, request, pk=None):
+        cognition = self.get_object()
+        if cognition.user != request.user:
+            return Response({'error': 'You do not have permission to share this cognition'},
+                            status=status.HTTP_403_FORBIDDEN)
+        if cognition.is_public:
+            cognition.is_public = False
+            cognition.share_date = None
+            message = "Cognition is now private"
+        else:
+            cognition.is_public = True
+            cognition.share_date = timezone.now()
+            message = "Cognition is now shared publicly"
+        cognition.save()
+        return Response({'status': 'success', 'is_public': cognition.is_public, 'message': message})
+
+    @action(detail=False, methods=['get'])
+    def collective(self, request):
+        following_profiles = request.user.profile.following.all()
+        following_users = [profile.user.id for profile in following_profiles]
+        queryset = Cognition.objects.filter(is_public=True).order_by('-share_date')
+        following_only = request.query_params.get('following_only', 'false').lower() == 'true'
+        if following_only and following_users:
+            queryset = queryset.filter(user__in=following_users)
+        page = self.paginate_queryset(queryset)
+        if page is not None:
+            serializer = CognitionCollectiveSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = CognitionCollectiveSerializer(queryset, many=True)
+        return Response(serializer.data)
+class UserProfileViewSet(viewsets.ReadOnlyModelViewSet):
+    queryset = UserProfile.objects.all()
+    serializer_class = UserProfileSerializer
+    filter_backends = [filters.SearchFilter]
+    search_fields = ['user__username']
+
+    @action(detail=True, methods=['post'])
+    def follow(self, request, pk=None):
+        profile_to_follow = self.get_object()
+        user_profile = request.user.profile
+        if profile_to_follow.user == request.user:
+            return Response({'error': 'You cannot follow yourself'}, status=status.HTTP_400_BAD_REQUEST)
+        user_profile.follow(profile_to_follow)
+        return Response({'status': 'success', 'message': f'You are now following {profile_to_follow.user.username}'})
+
+    @action(detail=True, methods=['post'])
+    def unfollow(self, request, pk=None):
+        profile_to_unfollow = self.get_object()
+        user_profile = request.user.profile
+        user_profile.unfollow(profile_to_unfollow)
+        return Response({'status': 'success', 'message': f'You have unfollowed {profile_to_unfollow.user.username}'})
+
+    @action(detail=False, methods=['get'])
+    def my_profile(self, request):
+        serializer = self.get_serializer(request.user.profile)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def following(self, request):
+        following = request.user.profile.get_following()
+        page = self.paginate_queryset(following)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(following, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def followers(self, request):
+        followers = request.user.profile.get_followers()
+        page = self.paginate_queryset(followers)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        serializer = self.get_serializer(followers, many=True)
+        return Response(serializer.data)
     
     @action(detail=True, methods=['post'])
     def process_text(self, request, pk=None):

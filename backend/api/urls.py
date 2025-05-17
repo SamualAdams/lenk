@@ -23,6 +23,7 @@ router.register(r'nodes', views.NodeViewSet)
 router.register(r'syntheses', views.SynthesisViewSet)
 router.register(r'preset-responses', views.PresetResponseViewSet)
 router.register(r'arcs', views.ArcViewSet)
+router.register(r'profiles', views.UserProfileViewSet)
 
 # Append router URLs to the urlpatterns
 urlpatterns += router.urls
