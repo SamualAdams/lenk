@@ -85,7 +85,8 @@ class NodeSerializer(serializers.ModelSerializer):
         """
         Return a list with:
         - The author's synthesis (always, if exists)
-        - The current user's synthesis (if exists, and different from author)
+        - The current user's synthesis (if exists)
+        - If current user is the author, include their synthesis in both roles
         """
         user = None
         if 'request' in self.context:
@@ -94,17 +95,19 @@ class NodeSerializer(serializers.ModelSerializer):
         # Always show the author's synthesis (if exists)
         author_synthesis = obj.syntheses.filter(user=obj.cognition.user).first()
 
-        # Show the current user's synthesis if it's not the author, and only if authenticated
-        # Defensive: syntheses are included only if current user is authenticated
+        # Get the user's synthesis (whether they're the author or not)
         user_synthesis = None
-        if user and user.is_authenticated and user != obj.cognition.user:
+        if user and user.is_authenticated:
             user_synthesis = obj.syntheses.filter(user=user).first()
 
         syntheses = []
         if author_synthesis:
             syntheses.append(SynthesisSerializer(author_synthesis, context=self.context).data)
-        if user_synthesis:
+        
+        # Add user's synthesis if it exists and is different from author's synthesis
+        if user_synthesis and (not author_synthesis or user_synthesis.id != author_synthesis.id):
             syntheses.append(SynthesisSerializer(user_synthesis, context=self.context).data)
+        
 
         return syntheses
 
