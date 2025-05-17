@@ -1,5 +1,3 @@
-
-
 import React, { createContext, useState, useEffect, useContext } from 'react';
 import axiosInstance from '../axiosConfig';
 
@@ -13,11 +11,28 @@ export function AuthProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState('');
+  const [tokenExpiry, setTokenExpiry] = useState(null);
 
   useEffect(() => {
     const token = localStorage.getItem('token');
-    if (token) {
-      checkAuthStatus();
+    const expiryString = localStorage.getItem('tokenExpiry');
+    const expiry = expiryString ? new Date(expiryString) : null;
+
+    if (token && expiry) {
+      const now = new Date();
+      if (expiry <= now) {
+        refreshToken();
+      } else {
+        checkAuthStatus();
+        const interval = setInterval(() => {
+          const now = new Date();
+          if (expiry - now <= 24 * 60 * 60 * 1000) {
+            refreshToken();
+          }
+        }, 60 * 60 * 1000);
+        return () => clearInterval(interval);
+      }
+      setTokenExpiry(expiry);
     } else {
       setIsLoading(false);
     }
@@ -29,7 +44,27 @@ export function AuthProvider({ children }) {
       setCurrentUser(response.data);
     } catch (error) {
       localStorage.removeItem('token');
+      localStorage.removeItem('tokenExpiry');
     } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const refreshToken = async () => {
+    try {
+      const response = await axiosInstance.post('/auth/refresh-token/');
+      const { token } = response.data;
+      const expiry = new Date();
+      expiry.setDate(expiry.getDate() + 7);
+      localStorage.setItem('token', token);
+      localStorage.setItem('tokenExpiry', expiry.toISOString());
+      axiosInstance.defaults.headers.common['Authorization'] = `Token ${token}`;
+      setTokenExpiry(expiry);
+      await checkAuthStatus();
+    } catch (error) {
+      localStorage.removeItem('token');
+      localStorage.removeItem('tokenExpiry');
+      setCurrentUser(null);
       setIsLoading(false);
     }
   };
@@ -39,8 +74,12 @@ export function AuthProvider({ children }) {
       setError('');
       const response = await axiosInstance.post('/auth/login/', { username, password });
       const { token, ...userData } = response.data;
+      const expiry = new Date();
+      expiry.setDate(expiry.getDate() + 7);
       localStorage.setItem('token', token);
+      localStorage.setItem('tokenExpiry', expiry.toISOString());
       axiosInstance.defaults.headers.common['Authorization'] = `Token ${token}`;
+      setTokenExpiry(expiry);
       setCurrentUser(userData);
       return userData;
     } catch (error) {
@@ -54,8 +93,12 @@ export function AuthProvider({ children }) {
       setError('');
       const response = await axiosInstance.post('/auth/register/', { username, email, password });
       const { token, ...userData } = response.data;
+      const expiry = new Date();
+      expiry.setDate(expiry.getDate() + 7);
       localStorage.setItem('token', token);
+      localStorage.setItem('tokenExpiry', expiry.toISOString());
       axiosInstance.defaults.headers.common['Authorization'] = `Token ${token}`;
+      setTokenExpiry(expiry);
       setCurrentUser(userData);
       return userData;
     } catch (error) {
@@ -71,8 +114,10 @@ export function AuthProvider({ children }) {
       console.error('Logout error:', error);
     } finally {
       localStorage.removeItem('token');
+      localStorage.removeItem('tokenExpiry');
       delete axiosInstance.defaults.headers.common['Authorization'];
       setCurrentUser(null);
+      setTokenExpiry(null);
     }
   };
 
@@ -82,7 +127,8 @@ export function AuthProvider({ children }) {
     error,
     login,
     register,
-    logout
+    logout,
+    refreshToken
   };
 
   return (

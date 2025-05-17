@@ -19,4 +19,9 @@ class CustomCORSMiddleware:
         response["Access-Control-Allow-Origin"] = "http://localhost:3000"
         response["Access-Control-Allow-Credentials"] = "true"
         
+        # Add security headers
+        response["X-Content-Type-Options"] = "nosniff"
+        response["X-XSS-Protection"] = "1; mode=block"
+        response["X-Frame-Options"] = "DENY"
+        
         return response

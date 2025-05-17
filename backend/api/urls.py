@@ -13,6 +13,7 @@ urlpatterns = [
     path('auth/login/', auth_views.login_user, name='login'),
     path('auth/logout/', auth_views.logout_user, name='logout'),
     path('auth/user/', auth_views.get_user_info, name='user_info'),
+    path('auth/refresh-token/', auth_views.refresh_token, name='refresh_token'),
 ]
 
 # Then add router URLs

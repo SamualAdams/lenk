@@ -25,6 +25,23 @@ SECRET_KEY = '(8=d6xsy!ley4uo353^&@pn-+v$*t9%7*6+(sldc8s73o((@pu'
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = True
 
+# Security settings for production
+if not DEBUG:
+    # HTTPS settings
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    SECURE_SSL_REDIRECT = True
+
+    # HSTS settings
+    SECURE_HSTS_SECONDS = 31536000  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+
+    # Content security
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_BROWSER_XSS_FILTER = True
+    X_FRAME_OPTIONS = 'DENY'
+
 ALLOWED_HOSTS = ['localhost', '127.0.0.1']
 
 
@@ -123,7 +140,9 @@ USE_TZ = True
 # Static files (CSS, JavaScript, Images)
 # https://docs.djangoproject.com/en/3.1/howto/static-files/
 
+
 STATIC_URL = '/static/'
+TOKEN_EXPIRY_TIME = 7  # Tokens expire after 7 days
 
 # CORS Settings
 CORS_ALLOW_ALL_ORIGINS = True
@@ -141,7 +160,7 @@ CORS_ALLOW_METHODS = [
 CSRF_TRUSTED_ORIGINS = ['http://localhost:3000']
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'rest_framework.authentication.TokenAuthentication',
+        'api.token_auth.ExpiringTokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [

@@ -81,3 +81,11 @@ def get_user_info(request):
             'email': request.user.email
         })
     return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)
+@api_view(['POST'])
+def refresh_token(request):
+    """Endpoint to refresh a user's authentication token"""
+    if request.user.is_authenticated:
+        request.user.auth_token.delete()
+        token, _ = Token.objects.get_or_create(user=request.user)
+        return Response({'token': token.key})
+    return Response({'error': 'Not authenticated'}, status=status.HTTP_401_UNAUTHORIZED)

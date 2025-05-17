@@ -12,3 +12,52 @@
   --success-color: #4caf50;
   --input-background: #2c2c2c;
 }
+
+.error-boundary {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 80vh;
+  padding: 2rem;
+  text-align: center;
+  color: var(--primary-color);
+  background-color: var(--background-color);
+}
+
+.error-boundary h2 {
+  color: var(--danger-color);
+  margin-bottom: 1rem;
+}
+
+.error-boundary details {
+  margin: 1rem 0;
+  padding: 1rem;
+  background-color: var(--input-background);
+  border-radius: 4px;
+  max-width: 800px;
+  text-align: left;
+  overflow: auto;
+}
+
+.error-home-btn,
+.error-reload-btn {
+  margin: 0.5rem;
+  padding: 0.5rem 1rem;
+  border-radius: 4px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.error-home-btn {
+  background-color: var(--accent-color);
+  border: none;
+  color: white;
+}
+
+.error-reload-btn {
+  background-color: transparent;
+  border: 1px solid var(--border-color);
+  color: var(--primary-color);
+}

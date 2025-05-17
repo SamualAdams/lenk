@@ -39,6 +39,15 @@ axiosInstance.interceptors.response.use(
   error => {
     if (error.response) {
       console.error('API Error Response:', error.response.status, error.response.data);
+      if (error.response.status === 401) {
+        localStorage.removeItem('token');
+        localStorage.removeItem('tokenExpiry');
+        delete axiosInstance.defaults.headers.common['Authorization'];
+        const currentPath = window.location.pathname;
+        if (!currentPath.includes('/login') && !currentPath.includes('/register')) {
+          window.location.href = '/login';
+        }
+      }
     } else if (error.request) {
       console.error('API Error Request:', error.request);
     } else {
