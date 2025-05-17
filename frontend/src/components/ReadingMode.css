@@ -236,6 +236,7 @@
 }
 
 /* Main Content Area */
+
 .reading-content {
   display: flex;
   flex-direction: column;
@@ -243,6 +244,40 @@
   flex: 1;
   overflow: hidden;
   padding: 1rem;
+}
+
+.synthesis-sections {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+  flex: 1;
+  min-height: 0;
+}
+
+.author-synthesis, .user-synthesis {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.synthesis-content {
+  flex: 1;
+  overflow: auto;
+  padding: 1rem;
+  background-color: var(--input-background);
+  color: var(--primary-color);
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  font-size: 1rem;
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.placeholder {
+  color: var(--secondary-color);
+  font-style: italic;
 }
 
 /* Navigation Controls */

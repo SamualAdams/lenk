@@ -14,7 +14,9 @@ function ReadingMode() {
   const [cognition, setCognition] = useState(null);
   const [nodes, setNodes] = useState([]);
   const [currentNodeIndex, setCurrentNodeIndex] = useState(0);
-  const [synthesis, setSynthesis] = useState("");
+  const [authorSynthesis, setAuthorSynthesis] = useState("");
+  const [userSynthesis, setUserSynthesis] = useState("");
+  const [hasUserSynthesis, setHasUserSynthesis] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandMode, setExpandMode] = useState(false);
@@ -22,14 +24,14 @@ function ReadingMode() {
   const [appendingText, setAppendingText] = useState(false);
   const [selectedIndices, setSelectedIndices] = useState(new Set());
   const [editMode, setEditMode] = useState(false);
-  const [synthesisSaved, setSynthesisSaved] = useState(true);
+  // synthesisSaved and related state are removed, since user synthesis is debounced and auto-saved
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
 
   const currentNode = nodes[currentNodeIndex] || null;
   const [nodeText, setNodeText] = useState("");
   const textareaRef = useRef(null);
-  const synthesisRef = useRef(null);
+  // const synthesisRef = useRef(null);
 
   // Auth context and owner check
   const { currentUser } = useAuth();
@@ -75,8 +77,8 @@ function ReadingMode() {
     [currentNode, currentNodeIndex]
   );
 
-  // Debounced autosave for synthesis
-  const debouncedSaveSynthesis = useCallback(
+  // Debounced save for user synthesis (not author synthesis)
+  const debouncedSaveUserSynthesis = useCallback(
     debounce(async (text) => {
       if (!currentNode) return;
       try {
@@ -84,24 +86,26 @@ function ReadingMode() {
           node_id: currentNode.id,
           content: text
         });
-        
-        // Update nodes state with new synthesis
+        // Update nodes state with new user synthesis
         setNodes(nodes => {
           const updatedNodes = [...nodes];
+          const syntheses = [...(updatedNodes[currentNodeIndex].syntheses || [])];
+          const idx = syntheses.findIndex(s => !s.is_author);
+          if (idx >= 0) {
+            syntheses[idx] = { ...syntheses[idx], content: text };
+          } else {
+            syntheses.push({ content: text, is_author: false });
+          }
           updatedNodes[currentNodeIndex] = {
-            ...currentNode,
-            synthesis: {
-              ...(currentNode.synthesis || {}),
-              content: text
-            }
+            ...updatedNodes[currentNodeIndex],
+            syntheses: syntheses
           };
           return updatedNodes;
         });
-        
-        setSynthesisSaved(true);
-        displayToast("Synthesis saved");
+        setHasUserSynthesis(true);
+        displayToast("Your synthesis saved");
       } catch (err) {
-        setError("Failed to save synthesis");
+        setError("Failed to save your synthesis");
       }
     }, 1000),
     [currentNode, currentNodeIndex]
@@ -111,9 +115,9 @@ function ReadingMode() {
   useEffect(() => {
     return () => {
       debouncedSaveNode.cancel();
-      debouncedSaveSynthesis.cancel();
+      debouncedSaveUserSynthesis.cancel();
     };
-  }, [debouncedSaveNode, debouncedSaveSynthesis]);
+  }, [debouncedSaveNode, debouncedSaveUserSynthesis]);
 
   // Handle node text changes with debounced save
   const handleNodeChange = (e) => {
@@ -122,12 +126,11 @@ function ReadingMode() {
     debouncedSaveNode(text);
   };
 
-  // Handle synthesis changes with debounced save
-  const handleSynthesisChange = (e) => {
+  // Handle user synthesis changes with debounced save
+  const handleUserSynthesisChange = (e) => {
     const text = e.target.value;
-    setSynthesis(text);
-    setSynthesisSaved(false);
-    debouncedSaveSynthesis(text);
+    setUserSynthesis(text);
+    debouncedSaveUserSynthesis(text);
   };
 
   // Delete cognition handler
@@ -172,13 +175,21 @@ function ReadingMode() {
     fetchCognition();
   }, [fetchCognition, id]);
 
-  // Update synthesis textarea when node changes
+// Update syntheses (author and user) when node changes
   useEffect(() => {
     if (nodes.length && currentNodeIndex >= 0 && currentNodeIndex < nodes.length) {
-      setSynthesis(nodes[currentNodeIndex]?.synthesis?.content || "");
-      setSynthesisSaved(true);
+      const syntheses = nodes[currentNodeIndex]?.syntheses || [];
+      // Find author's synthesis
+      const authorSyn = syntheses.find(s => s.is_author);
+      setAuthorSynthesis(authorSyn?.content || "");
+      // Find user's synthesis (assumes only one user synthesis per node, not showing a list)
+      const userSyn = syntheses.find(s => !s.is_author);
+      setUserSynthesis(userSyn?.content || "");
+      setHasUserSynthesis(!!userSyn);
     } else {
-      setSynthesis("");
+      setAuthorSynthesis("");
+      setUserSynthesis("");
+      setHasUserSynthesis(false);
     }
   }, [nodes, currentNodeIndex]);
 
@@ -258,21 +269,6 @@ function ReadingMode() {
     if (currentNode) {
       navigator.clipboard.writeText(currentNode.content);
       displayToast("Node content copied to clipboard");
-    }
-  };
-
-  const handleCopySynthesis = () => {
-    if (synthesis) {
-      navigator.clipboard.writeText(synthesis);
-      displayToast("Synthesis copied to clipboard");
-    }
-  };
-
-  const handleCopyBoth = () => {
-    if (currentNode) {
-      const text = `${currentNode.content || ""}\n\n${synthesis || ""}`;
-      navigator.clipboard.writeText(text);
-      displayToast("Node and synthesis copied to clipboard");
     }
   };
 
@@ -475,40 +471,57 @@ function ReadingMode() {
           )}
         </div>
 
-        {/* Synthesis section - always visible */}
-        <div 
-          className="synthesis-section"
-          style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}
-        >
-          <div className="synthesis-header" style={{ flexShrink: 0 }}>
-            <div className="synthesis-label">Synthesis</div>
-            <div className="synthesis-actions">
-              <button 
-                className="icon-button copy-btn" 
-                onClick={handleCopySynthesis}
-                title="Copy synthesis"
-              >
-                <FaCopy />
-              </button>
-              <button 
-                className="icon-button copy-both-btn" 
-                onClick={handleCopyBoth}
-                title="Copy node and synthesis"
-              >
-                <FaCopy /> Both
-              </button>
+        {/* Synthesis sections */}
+        <div className="synthesis-sections" style={{ display: 'flex', flexDirection: 'column', minHeight: 0, flex: 1 }}>
+          {/* Author's Synthesis */}
+          <div className="synthesis-section author-synthesis" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}>
+            <div className="synthesis-header">
+              <div className="synthesis-label">Author's Synthesis</div>
+              <div className="synthesis-actions">
+                <button 
+                  className="icon-button copy-btn" 
+                  onClick={() => {
+                    navigator.clipboard.writeText(authorSynthesis);
+                    displayToast("Author's synthesis copied");
+                  }}
+                  title="Copy author's synthesis"
+                >
+                  <FaCopy />
+                </button>
+              </div>
+            </div>
+            <div className="synthesis-content" style={{ flex: 1, overflow: 'auto', padding: '1rem', backgroundColor: 'var(--input-background)', color: 'var(--primary-color)', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+              {authorSynthesis || <span className="placeholder">No author synthesis available</span>}
             </div>
           </div>
-          
-          <textarea
-            ref={synthesisRef}
-            className="synthesis-textarea"
-            style={{ flex: 1, minHeight: 0 }}
-            value={synthesis}
-            onChange={isOwner ? handleSynthesisChange : undefined}
-            placeholder="Write your synthesis here..."
-            readOnly={!isOwner}
-          />
+
+          {/* User's Synthesis */}
+          <div className="synthesis-section user-synthesis" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, marginTop: '1rem' }}>
+            <div className="synthesis-header">
+              <div className="synthesis-label">Your Synthesis</div>
+              {hasUserSynthesis && (
+                <div className="synthesis-actions">
+                  <button 
+                    className="icon-button copy-btn" 
+                    onClick={() => {
+                      navigator.clipboard.writeText(userSynthesis);
+                      displayToast("Your synthesis copied");
+                    }}
+                    title="Copy your synthesis"
+                  >
+                    <FaCopy />
+                  </button>
+                </div>
+              )}
+            </div>
+            <textarea
+              className="synthesis-textarea"
+              style={{ flex: 1, minHeight: 0 }}
+              value={userSynthesis}
+              onChange={handleUserSynthesisChange}
+              placeholder="Write your own synthesis here..."
+            />
+          </div>
         </div>
       </main>
 

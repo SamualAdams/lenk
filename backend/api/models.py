@@ -32,6 +32,14 @@ class Node(models.Model):
     
     def __str__(self):
         return f"{self.cognition.title} - Node {self.position}"
+    
+    @property
+    def author_synthesis(self):
+        """
+        Returns the synthesis for this node created by the author of the parent cognition.
+        This property fetches the synthesis instance where the user matches the cognition's user.
+        """
+        return self.syntheses.filter(user=self.cognition.user).first()
 
 class PresetResponse(models.Model):
     """Reusable preset responses that can be applied to any node."""
@@ -39,34 +47,39 @@ class PresetResponse(models.Model):
     content = models.TextField()
     category = models.CharField(max_length=50, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
-    # user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)  # For future auth
+    # user = models.ForeignKey(User, null=True, blank=True, on_delete=models.SET_NULL)  # For future authentication
     
     def __str__(self):
         return self.title
 
 class Synthesis(models.Model):
-    node = models.OneToOneField(Node, related_name='synthesis', on_delete=models.CASCADE)
+    """
+    Each node can have multiple syntheses—one per user.
+    This model represents a synthesis written by a user for a specific node.
+    """
+    node = models.ForeignKey(Node, related_name='syntheses', on_delete=models.CASCADE)
+    user = models.ForeignKey(User, related_name='syntheses', on_delete=models.CASCADE)
     content = models.TextField(blank=True)
     preset_responses = models.ManyToManyField(PresetResponse, through='SynthesisPresetLink', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
-    
+
+    class Meta:
+        unique_together = ['node', 'user']
+
     def __str__(self):
-        return f"Synthesis for {self.node}"
-    
+        return f"Synthesis by {self.user.username} for {self.node}"
+
     @property
     def full_content(self):
         """Returns combined content of custom text and preset responses."""
         full_text = self.content
-        
-        # Add content from all preset responses
         links = self.preset_links.all().order_by('position')
         if links:
             if full_text:
                 full_text += "\n\n"
             preset_texts = [link.preset_response.content for link in links]
             full_text += "\n\n".join(preset_texts)
-            
         return full_text
 
 class SynthesisPresetLink(models.Model):

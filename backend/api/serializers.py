@@ -50,21 +50,63 @@ class SynthesisPresetLinkSerializer(serializers.ModelSerializer):
         fields = ['id', 'preset_response', 'position']
 
 class SynthesisSerializer(serializers.ModelSerializer):
+    user_id = serializers.ReadOnlyField(source='user.id')
+    username = serializers.ReadOnlyField(source='user.username')
+    is_author = serializers.SerializerMethodField()
     preset_links = SynthesisPresetLinkSerializer(many=True, read_only=True)
     full_content = serializers.ReadOnlyField()
     
     class Meta:
         model = Synthesis
-        fields = ['id', 'content', 'full_content', 'preset_links', 'created_at', 'updated_at']
+        fields = ['id', 'content', 'full_content', 'user_id', 'username', 
+                  'is_author', 'preset_links', 'created_at', 'updated_at']
+        read_only_fields = ['user_id', 'username', 'is_author']
+    
+    # Indicates if the synthesis is by the cognition author
+    def get_is_author(self, obj):
+        # Defensive check in case obj.user is None or anonymous user
+        if obj.user is None or not hasattr(obj.user, 'is_authenticated'):
+            return False
+        return obj.user == obj.node.cognition.user
 
 class NodeSerializer(serializers.ModelSerializer):
-    synthesis = SynthesisSerializer(read_only=True)
+    syntheses = serializers.SerializerMethodField()
 
     class Meta:
         model = Node
         fields = ['id', 'cognition', 'content', 'position', 'character_count',
-                  'is_illuminated', 'created_at', 'synthesis']
-        read_only_fields = ['synthesis', 'id', 'created_at']
+                  'is_illuminated', 'created_at', 'syntheses']
+        read_only_fields = ['syntheses', 'id', 'created_at']
+    
+    # Supports multiple syntheses per node: 
+    # Returns author's synthesis and the current user's synthesis (if user is not author).
+    # Used for displaying both syntheses in the UI.
+    def get_syntheses(self, obj):
+        """
+        Return a list with:
+        - The author's synthesis (always, if exists)
+        - The current user's synthesis (if exists, and different from author)
+        """
+        user = None
+        if 'request' in self.context:
+            user = self.context['request'].user
+
+        # Always show the author's synthesis (if exists)
+        author_synthesis = obj.syntheses.filter(user=obj.cognition.user).first()
+
+        # Show the current user's synthesis if it's not the author, and only if authenticated
+        # Defensive: syntheses are included only if current user is authenticated
+        user_synthesis = None
+        if user and user.is_authenticated and user != obj.cognition.user:
+            user_synthesis = obj.syntheses.filter(user=user).first()
+
+        syntheses = []
+        if author_synthesis:
+            syntheses.append(SynthesisSerializer(author_synthesis, context=self.context).data)
+        if user_synthesis:
+            syntheses.append(SynthesisSerializer(user_synthesis, context=self.context).data)
+
+        return syntheses
 
 class CognitionSerializer(serializers.ModelSerializer):
     nodes_count = serializers.SerializerMethodField()

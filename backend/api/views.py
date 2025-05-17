@@ -423,38 +423,52 @@ class NodeViewSet(viewsets.ModelViewSet):
         return Response({'status': 'success', 'is_illuminated': node.is_illuminated})
 
 class SynthesisViewSet(viewsets.ModelViewSet):
+    """
+    ViewSet for managing Synthesis objects.
+    Only returns syntheses for nodes that the user can access (their own or public),
+    and only if the synthesis is by the user or by the cognition author.
+    """
     serializer_class = SynthesisSerializer
     permission_classes = [IsAuthenticated]
 
     def get_queryset(self):
+        """
+        Return syntheses for nodes the user can access (public or their own).
+        Only include syntheses by user or the cognition author.
+        """
         user = self.request.user
         return Synthesis.objects.filter(
-            models.Q(node__cognition__user=user) | models.Q(node__cognition__is_public=True)
+            models.Q(node__cognition__user=user) | models.Q(node__cognition__is_public=True),
+        ).filter(
+            models.Q(user=user) | models.Q(user=models.F('node__cognition__user'))
         )
 
     @action(detail=False, methods=['post'])
     def add_or_update(self, request):
+        """
+        Add or update the current user's synthesis for a given node.
+        Only one synthesis per (user, node) is allowed.
+        Returns the updated synthesis if successful.
+        """
         node_id = request.data.get('node_id')
         content = request.data.get('content')
-
         if not node_id:
-            return Response(
-                {'error': 'node_id is required'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
+            return Response({'error': 'node_id is required'}, status=status.HTTP_400_BAD_REQUEST)
         try:
             node = Node.objects.get(id=node_id)
+            # Permission: Only allow access if user is the cognition owner or the cognition is public
+            if node.cognition.user != request.user and not node.cognition.is_public:
+                return Response({'error': 'You do not have permission to access this node'}, status=status.HTTP_403_FORBIDDEN)
+            # Enforce one synthesis per user/node
             synthesis, created = Synthesis.objects.update_or_create(
                 node=node,
+                user=request.user,
                 defaults={'content': content or ''}
             )
-            return Response(SynthesisSerializer(synthesis).data)
+            serializer = SynthesisSerializer(synthesis, context={'request': request})
+            return Response(serializer.data)
         except Node.DoesNotExist:
-            return Response(
-                {'error': 'Node not found'}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
+            return Response({'error': 'Node not found'}, status=status.HTTP_404_NOT_FOUND)
 
     @action(detail=True, methods=['post'])
     def add_preset(self, request, pk=None):
