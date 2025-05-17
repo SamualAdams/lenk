@@ -57,6 +57,15 @@ axiosInstance.interceptors.response.use(
   }
 );
 
+/**
+ * Summarize a node by nodeId.
+ * Returns the summary text from the backend.
+ */
+export const summarizeNode = async (nodeId) => {
+  const response = await axiosInstance.post(`/nodes/${nodeId}/summarize/`);
+  return response.data.summary;
+};
+
 export default axiosInstance;
 
 // Special axios instance for registration and login (no credentials/cookies sent)

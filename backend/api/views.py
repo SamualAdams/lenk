@@ -13,7 +13,8 @@ from .serializers import UserProfileSerializer, CognitionCollectiveSerializer
 from django.utils import timezone
 from rest_framework import filters
 import re
-
+import os
+import openai
 from django.views.decorators.csrf import csrf_exempt
 from rest_framework.decorators import api_view, action, permission_classes
 from rest_framework.permissions import AllowAny
@@ -497,6 +498,33 @@ class NodeViewSet(viewsets.ModelViewSet):
         node.is_illuminated = not node.is_illuminated
         node.save()
         return Response({'status': 'success', 'is_illuminated': node.is_illuminated})
+
+    @action(detail=True, methods=['post'], permission_classes=[IsAuthenticated])
+    def summarize(self, request, pk=None):
+        node = self.get_object()
+        if node.cognition.user != request.user and not node.cognition.is_public:
+            return Response({'error': 'You do not have permission to summarize this node'}, status=status.HTTP_403_FORBIDDEN)
+
+        openai_api_key = os.getenv('OPENAI_API_KEY')
+        if not openai_api_key:
+            return Response({'error': 'OpenAI API key not set on server'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        openai.api_key = openai_api_key
+
+        prompt = f"Summarize the following text in plain English:\n\n{node.content}"
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=120,
+                temperature=0.4,
+            )
+            summary = response.choices[0].message.content.strip()
+        except Exception as e:
+            return Response({'error': f'OpenAI API error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+        return Response({'summary': summary})
 
 class SynthesisViewSet(viewsets.ModelViewSet):
     """

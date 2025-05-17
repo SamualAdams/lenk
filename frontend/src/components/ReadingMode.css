@@ -753,3 +753,15 @@
     overflow: visible;
   }
 }
+/* LLM Summary Box */
+.node-summary-box {
+  margin-top: 1rem;
+  background: #232840;
+  color: #f1f1f1;
+  padding: 1rem;
+  border: 1px solid #3742fa;
+  border-radius: 6px;
+  font-size: 1rem;
+  line-height: 1.6;
+  box-shadow: 0 2px 10px rgba(60,80,255,0.05);
+}
