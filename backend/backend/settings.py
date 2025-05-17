@@ -62,9 +62,9 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
+    'corsheaders.middleware.CorsMiddleware',
     'django.contrib.sessions.middleware.SessionMiddleware',
-    'api.middleware.CustomCORSMiddleware',  # Add this line
-    'corsheaders.middleware.CorsMiddleware',  # Before CommonMiddleware
+    # 'api.middleware.CustomCORSMiddleware',  # Temporarily removed to avoid CORS conflicts
     'django.middleware.common.CommonMiddleware',
     'django.middleware.csrf.CsrfViewMiddleware',
     'django.contrib.auth.middleware.AuthenticationMiddleware',
@@ -147,7 +147,7 @@ TOKEN_EXPIRY_TIME = 7  # Tokens expire after 7 days
 # CORS Settings
 CORS_ALLOW_ALL_ORIGINS = False
 CORS_ALLOW_CREDENTIALS = True
-CORS_ORIGIN_WHITELIST = [
+CORS_ALLOWED_ORIGINS = [
     'http://localhost:3000',
 ]
 CORS_ALLOW_METHODS = [

@@ -12,6 +12,7 @@ function ReadingMode() {
   const { id } = useParams();
   const navigate = useNavigate();
   const [cognition, setCognition] = useState(null);
+  const [titleInput, setTitleInput] = useState("");
   const [nodes, setNodes] = useState([]);
   const [currentNodeIndex, setCurrentNodeIndex] = useState(0);
   const [authorSynthesis, setAuthorSynthesis] = useState("");
@@ -38,7 +39,8 @@ function ReadingMode() {
   const isOwner = cognition && currentUser && (
     cognition.username === currentUser.username ||
     cognition.user_id === currentUser.user_id ||
-    cognition.user === currentUser.user_id // covers various possible field names
+    cognition.user === currentUser.user_id ||
+    (cognition.user && typeof cognition.user === "object" && cognition.user.id === currentUser.user_id)
   );
 
   // Toast message helper
@@ -111,6 +113,36 @@ function ReadingMode() {
     [currentNode, currentNodeIndex]
   );
 
+  // Debounced save for author synthesis (for author only)
+  const debouncedSaveAuthorSynthesis = useCallback(
+    debounce(async (text) => {
+      if (!currentNode) return;
+      try {
+        await axiosInstance.post("/syntheses/add_or_update/", {
+          node_id: currentNode.id,
+          content: text
+        });
+        setNodes(nodes => {
+          const updatedNodes = [...nodes];
+          const syntheses = [...(updatedNodes[currentNodeIndex].syntheses || [])];
+          const idx = syntheses.findIndex(s => s.is_author);
+          if (idx >= 0) {
+            syntheses[idx] = { ...syntheses[idx], content: text };
+          }
+          updatedNodes[currentNodeIndex] = {
+            ...updatedNodes[currentNodeIndex],
+            syntheses: syntheses
+          };
+          return updatedNodes;
+        });
+        displayToast("Author's synthesis saved");
+      } catch (err) {
+        setError("Failed to save author's synthesis");
+      }
+    }, 1000),
+    [currentNode, currentNodeIndex]
+  );
+
   // Cancel debounce on unmount
   useEffect(() => {
     return () => {
@@ -151,6 +183,7 @@ function ReadingMode() {
       setError(null);
       const response = await axiosInstance.get(`/cognitions/${id}/?include_syntheses=true`);
       setCognition(response.data);
+      setTitleInput(response.data.title);
       setNodes(response.data.nodes || []);
       setIsLoading(false);
     } catch (err) {
@@ -158,6 +191,23 @@ function ReadingMode() {
       setIsLoading(false);
     }
   }, [id]);
+  useEffect(() => {
+    if (cognition && cognition.title) setTitleInput(cognition.title);
+  }, [cognition]);
+
+  const debouncedSaveTitle = useCallback(
+    debounce(async (newTitle) => {
+      console.log("debouncedSaveTitle called", cognition?.id, newTitle);
+      try {
+        await axiosInstance.patch(`/cognitions/${id}/`, { title: newTitle });
+        setCognition(cog => ({ ...cog, title: newTitle }));
+        displayToast("Title updated");
+      } catch (err) {
+        setError("Failed to update title");
+      }
+    }, 1000),
+    [id, cognition]
+  );
 
   // Toggle cognition star status
   const toggleStar = async () => {
@@ -374,7 +424,20 @@ function ReadingMode() {
           >
             <FaHome />
           </button>
-          <h1 className="cognition-title">{cognition.title}</h1>
+          {isOwner ? (
+            <input
+              className="cognition-title-input"
+              value={titleInput}
+              onChange={e => {
+                console.log("Input changed", cognition?.id, e.target.value);
+                setTitleInput(e.target.value);
+                debouncedSaveTitle(e.target.value);
+              }}
+              style={{ fontSize: '2rem', fontWeight: 'bold', border: 0, background: 'none', outline: 'none', width: '100%' }}
+            />
+          ) : (
+            <h1 className="cognition-title">{cognition.title}</h1>
+          )}
           {isOwner && (
             <button 
               className="icon-button star-btn" 
@@ -485,38 +548,53 @@ function ReadingMode() {
                 </button>
               </div>
             </div>
-            <div className="synthesis-content" style={{ flex: 1, overflow: 'auto', padding: '1rem', backgroundColor: 'var(--input-background)', color: 'var(--primary-color)', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
-              {authorSynthesis || <span className="placeholder">No author synthesis available</span>}
-            </div>
+            {isOwner ? (
+              <textarea
+                className="synthesis-textarea"
+                style={{ flex: 1, minHeight: 0 }}
+                value={authorSynthesis}
+                onChange={e => {
+                  setAuthorSynthesis(e.target.value);
+                  debouncedSaveAuthorSynthesis(e.target.value);
+                }}
+                placeholder="Write your synthesis as author..."
+              />
+            ) : (
+              <div className="synthesis-content" style={{ flex: 1, overflow: 'auto', padding: '1rem', backgroundColor: 'var(--input-background)', color: 'var(--primary-color)', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+                {authorSynthesis || <span className="placeholder">No author synthesis available</span>}
+              </div>
+            )}
           </div>
 
           {/* User's Synthesis */}
-          <div className="synthesis-section user-synthesis" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, marginTop: '1rem' }}>
-            <div className="synthesis-header">
-              <div className="synthesis-label">Your Synthesis</div>
-              {hasUserSynthesis && (
-                <div className="synthesis-actions">
-                  <button 
-                    className="icon-button copy-btn" 
-                    onClick={() => {
-                      navigator.clipboard.writeText(userSynthesis);
-                      displayToast("Your synthesis copied");
-                    }}
-                    title="Copy your synthesis"
-                  >
-                    <FaCopy />
-                  </button>
-                </div>
-              )}
+          {!isOwner && (
+            <div className="synthesis-section user-synthesis" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, marginTop: '1rem' }}>
+              <div className="synthesis-header">
+                <div className="synthesis-label">Your Synthesis</div>
+                {hasUserSynthesis && (
+                  <div className="synthesis-actions">
+                    <button 
+                      className="icon-button copy-btn" 
+                      onClick={() => {
+                        navigator.clipboard.writeText(userSynthesis);
+                        displayToast("Your synthesis copied");
+                      }}
+                      title="Copy your synthesis"
+                    >
+                      <FaCopy />
+                    </button>
+                  </div>
+                )}
+              </div>
+              <textarea
+                className="synthesis-textarea"
+                style={{ flex: 1, minHeight: 0 }}
+                value={userSynthesis}
+                onChange={handleUserSynthesisChange}
+                placeholder="Write your own synthesis here..."
+              />
             </div>
-            <textarea
-              className="synthesis-textarea"
-              style={{ flex: 1, minHeight: 0 }}
-              value={userSynthesis}
-              onChange={handleUserSynthesisChange}
-              placeholder="Write your own synthesis here..."
-            />
-          </div>
+          )}
         </div>
       </main>
 
