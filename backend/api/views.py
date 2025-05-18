@@ -524,6 +524,15 @@ class NodeViewSet(viewsets.ModelViewSet):
             summary = response.choices[0].message.content.strip()
         except Exception as e:
             return Response({'error': f'OpenAI API error: {str(e)}'}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        # Save or update AI synthesis for this node and user
+        synthesis, created = Synthesis.objects.update_or_create(
+            node=node,
+            user=request.user,
+            source='ai',
+            defaults={'content': summary}
+        )
+
         return Response({'summary': summary})
 
 class SynthesisViewSet(viewsets.ModelViewSet):

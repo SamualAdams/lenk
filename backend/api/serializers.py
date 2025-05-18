@@ -55,11 +55,12 @@ class SynthesisSerializer(serializers.ModelSerializer):
     is_author = serializers.SerializerMethodField()
     preset_links = SynthesisPresetLinkSerializer(many=True, read_only=True)
     full_content = serializers.ReadOnlyField()
+    source = serializers.CharField(read_only=True)
     
     class Meta:
         model = Synthesis
         fields = ['id', 'content', 'full_content', 'user_id', 'username', 
-                  'is_author', 'preset_links', 'created_at', 'updated_at']
+                  'is_author', 'preset_links', 'created_at', 'updated_at', 'source']
         read_only_fields = ['user_id', 'username', 'is_author']
     
     # Indicates if the synthesis is by the cognition author

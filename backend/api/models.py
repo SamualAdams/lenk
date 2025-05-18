@@ -54,11 +54,17 @@ class PresetResponse(models.Model):
 
 class Synthesis(models.Model):
     """
-    Each node can have multiple syntheses—one per user.
+    Each node can have multiple syntheses—one per user, and one from the AI assistant.
     This model represents a synthesis written by a user for a specific node.
     """
     node = models.ForeignKey(Node, related_name='syntheses', on_delete=models.CASCADE)
     user = models.ForeignKey(User, related_name='syntheses', on_delete=models.CASCADE)
+    SOURCE_CHOICES = [
+        ('author', 'Author'),
+        ('user', 'User'),
+        ('ai', 'AI'),
+    ]
+    source = models.CharField(max_length=10, choices=SOURCE_CHOICES, default='user')
     content = models.TextField(blank=True)
     preset_responses = models.ManyToManyField(PresetResponse, through='SynthesisPresetLink', blank=True)
     created_at = models.DateTimeField(auto_now_add=True)

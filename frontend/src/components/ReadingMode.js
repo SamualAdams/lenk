@@ -4,6 +4,7 @@ import debounce from 'lodash.debounce';
 import { useParams, useNavigate } from "react-router-dom";
 import { FaTrashAlt, FaHome, FaExpandArrowsAlt, FaCheck, FaCopy, 
          FaChevronLeft, FaChevronRight, FaStar, FaRegStar } from "react-icons/fa";
+import { FaRegEdit } from "react-icons/fa";
 import axiosInstance from "../axiosConfig";
 import { summarizeNode } from "../axiosConfig";
 import "./ReadingMode.css";
@@ -19,6 +20,8 @@ function ReadingMode() {
   const [authorSynthesis, setAuthorSynthesis] = useState("");
   const [userSynthesis, setUserSynthesis] = useState("");
   const [hasUserSynthesis, setHasUserSynthesis] = useState(false);
+  const [aiSynthesis, setAiSynthesis] = useState("");
+  const [hasAiSynthesis, setHasAiSynthesis] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [expandMode, setExpandMode] = useState(false);
@@ -34,17 +37,15 @@ function ReadingMode() {
   const [nodeText, setNodeText] = useState("");
   const textareaRef = useRef(null);
   // Node summarization state
-  const [nodeSummary, setNodeSummary] = useState("");
   const [isSummarizing, setIsSummarizing] = useState(false);
   // Summarize node handler
   const handleSummarizeNode = async () => {
     if (!currentNode) return;
     setIsSummarizing(true);
     setError(null);
-    setNodeSummary("");
     try {
-      const summary = await summarizeNode(currentNode.id);
-      setNodeSummary(summary);
+      await summarizeNode(currentNode.id);
+      await fetchCognition();
     } catch (err) {
       setError("Failed to summarize node");
     }
@@ -243,21 +244,26 @@ function ReadingMode() {
     fetchCognition();
   }, [fetchCognition, id]);
 
-// Update syntheses (author and user) when node changes
+  // Update syntheses (author, user, ai) when node changes
   useEffect(() => {
     if (nodes.length && currentNodeIndex >= 0 && currentNodeIndex < nodes.length) {
       const syntheses = nodes[currentNodeIndex]?.syntheses || [];
-      // Find author's synthesis
-      const authorSyn = syntheses.find(s => s.is_author);
+      // Find by source
+      const authorSyn = syntheses.find(s => s.source === "author");
+      const userSyn = syntheses.find(s => s.source === "user");
+      const aiSyn = syntheses.find(s => s.source === "ai");
+
       setAuthorSynthesis(authorSyn?.content || "");
-      // Find user's synthesis (assumes only one user synthesis per node, not showing a list)
-      const userSyn = syntheses.find(s => !s.is_author);
       setUserSynthesis(userSyn?.content || "");
+      setAiSynthesis(aiSyn?.content || "");
       setHasUserSynthesis(!!userSyn);
+      setHasAiSynthesis(!!aiSyn);
     } else {
       setAuthorSynthesis("");
       setUserSynthesis("");
+      setAiSynthesis("");
       setHasUserSynthesis(false);
+      setHasAiSynthesis(false);
     }
   }, [nodes, currentNodeIndex]);
 
@@ -466,7 +472,7 @@ function ReadingMode() {
             </button>
           )}
         </div>
-        <div className="header-right">
+        <div className="header-actions">
           {isOwner && (
             <>
               <button 
@@ -485,6 +491,7 @@ function ReadingMode() {
               </button>
             </>
           )}
+          {/* Add any other global action buttons here as needed */}
         </div>
       </header>
 
@@ -521,7 +528,7 @@ function ReadingMode() {
                 onClick={() => setEditMode(!editMode)}
                 title={editMode ? "View mode" : "Edit mode"}
               >
-                {editMode ? "View" : "Edit"}
+                {editMode ? <FaCheck /> : <FaRegEdit />}
               </button>
             )}
             <button 
@@ -530,14 +537,6 @@ function ReadingMode() {
               title="Copy node content"
             >
               <FaCopy />
-            </button>
-            <button 
-              className="icon-button summarize-btn" 
-              onClick={handleSummarizeNode}
-              title="Summarize node"
-              disabled={isSummarizing}
-            >
-              {isSummarizing ? "Summarizing..." : "Summarize"}
             </button>
           </div>
           
@@ -553,11 +552,12 @@ function ReadingMode() {
           ) : (
             <div className="node-content-box" style={{ flex: 1, minHeight: 0 }}>{currentNode?.content}</div>
           )}
-          {nodeSummary && (
-            <div className="node-summary-box" style={{ marginTop: '1rem', background: '#fafafa', padding: '1rem', border: '1px solid #eee', borderRadius: '6px' }}>
-              <strong>Summary:</strong> {nodeSummary}
-            </div>
-          )}
+
+          {/* Node action ribbon */}
+          <div className="node-action-ribbon">
+            <button className="action-tag summarize-tag">Summarize</button>
+            <button className="action-tag challenge-tag">Challenge</button>
+          </div>
         </div>
 
         {/* Synthesis sections */}
@@ -624,6 +624,30 @@ function ReadingMode() {
                 onChange={handleUserSynthesisChange}
                 placeholder="Write your own synthesis here..."
               />
+            </div>
+          )}
+
+          {/* AI Synthesis */}
+          {hasAiSynthesis && (
+            <div className="synthesis-section ai-synthesis" style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, marginTop: '1rem' }}>
+              <div className="synthesis-header">
+                <div className="synthesis-label">AI Synthesis</div>
+                <div className="synthesis-actions">
+                  <button
+                    className="icon-button copy-btn"
+                    onClick={() => {
+                      navigator.clipboard.writeText(aiSynthesis);
+                      displayToast("AI synthesis copied");
+                    }}
+                    title="Copy AI synthesis"
+                  >
+                    <FaCopy />
+                  </button>
+                </div>
+              </div>
+              <div className="synthesis-content" style={{ flex: 1, overflow: 'auto', padding: '1rem', backgroundColor: 'var(--input-background)', color: 'var(--primary-color)', border: '1px solid var(--border-color)', borderRadius: '6px' }}>
+                {aiSynthesis || <span className="placeholder">No AI synthesis available</span>}
+              </div>
             </div>
           )}
         </div>
