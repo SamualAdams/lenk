@@ -5,6 +5,7 @@ import { useParams, useNavigate } from "react-router-dom";
 import { FaTrashAlt, FaHome, FaExpandArrowsAlt, FaCheck, FaCopy, 
          FaChevronLeft, FaChevronRight, FaStar, FaRegStar } from "react-icons/fa";
 import axiosInstance from "../axiosConfig";
+import { summarizeNode } from "../axiosConfig";
 import "./ReadingMode.css";
 import Timeline from "./Timeline";
 
@@ -32,6 +33,23 @@ function ReadingMode() {
   const currentNode = nodes[currentNodeIndex] || null;
   const [nodeText, setNodeText] = useState("");
   const textareaRef = useRef(null);
+  // Node summarization state
+  const [nodeSummary, setNodeSummary] = useState("");
+  const [isSummarizing, setIsSummarizing] = useState(false);
+  // Summarize node handler
+  const handleSummarizeNode = async () => {
+    if (!currentNode) return;
+    setIsSummarizing(true);
+    setError(null);
+    setNodeSummary("");
+    try {
+      const summary = await summarizeNode(currentNode.id);
+      setNodeSummary(summary);
+    } catch (err) {
+      setError("Failed to summarize node");
+    }
+    setIsSummarizing(false);
+  };
   // const synthesisRef = useRef(null);
 
   // Auth context and owner check
@@ -513,6 +531,14 @@ function ReadingMode() {
             >
               <FaCopy />
             </button>
+            <button 
+              className="icon-button summarize-btn" 
+              onClick={handleSummarizeNode}
+              title="Summarize node"
+              disabled={isSummarizing}
+            >
+              {isSummarizing ? "Summarizing..." : "Summarize"}
+            </button>
           </div>
           
           {editMode ? (
@@ -526,6 +552,11 @@ function ReadingMode() {
             />
           ) : (
             <div className="node-content-box" style={{ flex: 1, minHeight: 0 }}>{currentNode?.content}</div>
+          )}
+          {nodeSummary && (
+            <div className="node-summary-box" style={{ marginTop: '1rem', background: '#fafafa', padding: '1rem', border: '1px solid #eee', borderRadius: '6px' }}>
+              <strong>Summary:</strong> {nodeSummary}
+            </div>
           )}
         </div>
 
