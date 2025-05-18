@@ -279,18 +279,34 @@
   min-height: 0;
 }
 
-.synthesis-content {
-  flex: 1;
-  overflow: auto;
-  padding: 1rem;
-  background-color: var(--input-background);
+/* Updated node content and synthesis textarea styles for compact, dark-mode minimal look */
+.node-content-box, .node-content-editable {
+  background: var(--input-background);
   color: var(--primary-color);
   border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font-size: 1rem;
-  line-height: 1.6;
-  white-space: pre-wrap;
-  word-break: break-word;
+  border-radius: 10px;
+  padding: 1rem;
+  font-size: 1.15rem;
+  margin-bottom: 0.5rem;
+  min-height: 120px;
+}
+.node-content-editable {
+  resize: none;
+  font-family: inherit;
+  height: 100%;
+}
+.node-content-editable:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+.synthesis-textarea, .synthesis-content {
+  background: var(--input-background);
+  color: var(--primary-color);
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+  padding: 1rem;
+  font-size: 1.13rem;
+  min-height: 90px;
 }
 
 .placeholder {
@@ -358,85 +374,28 @@
   align-self: flex-end;
 }
 
-.node-content-editable,
-.node-content-box,
-.synthesis-textarea {
-  flex: 1 1 0;
-  min-height: 0;
-}
+/* Removed old node-content-box, node-content-editable, and synthesis-textarea blocks as replaced above */
 
-.node-content-box, 
-.node-content-editable {
-  height: 100%;
-  padding: 1rem;
-  background-color: var(--input-background);
-  color: var(--primary-color);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font-size: 1rem;
-  line-height: 1.6;
-  overflow-y: auto;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-.node-content-editable {
-  resize: none;
-  font-family: inherit;
-  height: 100%;
-}
-
-.node-content-editable:focus {
-  outline: none;
-  border-color: var(--accent-color);
-}
-
-.illumination-indicator {
-  font-size: 1rem;
-  opacity: 0.6;
-  transition: opacity 0.2s ease;
-}
-
-.illuminated .illumination-indicator {
-  opacity: 1;
-}
-
-/* Synthesis Section */
+/* Updated synthesis-section and synthesis-label for clear label and minimal gap */
 .synthesis-section {
-  gap: 0;
-  margin-top: 0;
+  margin-top: 1.5rem;
 }
-
 .synthesis-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
 }
-
 .synthesis-label {
-  color: var(--accent-color);
-  font-weight: 500;
-  font-size: 0.95rem;
+  display: block;
+  color: #7aa0fa;
+  font-size: 1.07rem;
+  font-weight: 600;
+  margin-bottom: 0.5rem;
 }
 
 .synthesis-actions {
   display: flex;
   gap: 0.5rem;
-}
-
-.synthesis-textarea {
-  height: 100%;
-  padding: 1rem;
-  background-color: var(--input-background);
-  color: var(--primary-color);
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  font-family: inherit;
-  font-size: 1rem;
-  line-height: 1.6;
-  resize: none;
-  white-space: pre-wrap;
-  word-break: break-word;
 }
 
 .synthesis-textarea:focus {
@@ -802,35 +761,36 @@
 .ai-synthesis .synthesis-header .icon-button:hover {
   background: #274561;
 }
+
+/* Updated node-action-ribbon and action-tag for compact, pill-shaped button look */
 .node-action-ribbon {
   display: flex;
-  gap: 0.5rem;
-  margin: 0.75rem 0 0.5rem 0;
-  padding: 0.25rem 0;
-  border-bottom: 1px solid var(--border-color);
-  border-top: 1px solid var(--border-color);
-  background: var(--surface-color);
+  gap: 0.25rem;
+  margin: 0 0 1.1rem 0;
+  padding: 0.2rem 0;
+  background: none;
+  border: none;
   justify-content: flex-start;
 }
 
 .action-tag {
-  display: inline-block;
-  background: #222b3a;
-  color: #62c3ea;
-  border: none;
-  border-radius: 1.5rem;
-  padding: 0.38rem 1rem;
-  font-size: 1rem;
+  background: #232840;
+  color: #e8fcfa;
+  border: 1px solid #3742fa;
+  border-radius: 999px;
+  padding: 0.25rem 1.1rem;
+  font-size: 1.04rem;
   font-weight: 500;
   min-width: 0;
-  margin-right: 0;
+  margin: 0;
   cursor: pointer;
   transition: background 0.18s, color 0.18s;
+  box-shadow: none;
 }
 
 .action-tag:hover, .action-tag:focus {
-  background: #263e56;
-  color: #fff;
+  background: #2d354d;
+  color: #5fd5c7;
 }
 
 .summarize-tag {
