@@ -1,3 +1,14 @@
+@keyframes fadeSlideIn {
+  0% {
+    opacity: 0;
+    transform: translateX(-50%) scale(0.95);
+  }
+  100% {
+    opacity: 1;
+    transform: translateX(-50%) scale(1);
+  }
+}
+
 .simple-mobile-dock {
   position: fixed;
   bottom: .8rem;
@@ -10,7 +21,6 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border: 1px solid rgba(255,255,255,0.05);
   box-shadow: none !important;
   border-radius: 50px;
   padding: 0 !important;
@@ -49,14 +59,17 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  box-shadow: none !important;
   height: 3.8rem;
   width: 96vw;
   max-width: 500px;
-  background: rgba(15,15,15,0.8);
+  background: none !important;
+  /* background: rgba(15,15,15,0.8); */
   border-radius: 50px;
   backdrop-filter: blur(6px);
-  border: 1px solid rgba(255,255,255,0.05);
+  border: 3px solid rgba(255,255,255,0.05);
   margin-bottom: .5vh;
+  animation: fadeSlideIn 0.18s ease-out;
 }
 
 .pre-nav-option {

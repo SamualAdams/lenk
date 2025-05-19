@@ -1,12 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import axiosInstance from '../../../axiosConfig';
-import './InputMode.css';
+import './Dump.css';
 import { FaStar, FaRegStar, FaTrashAlt, FaCopy } from 'react-icons/fa';
 import { useAuth } from '../../../context/AuthContext';
 import Navigation from '../../Navigation';
 
-function InputMode() {
+function Dump() {
   const { currentUser } = useAuth();
   const [cognitions, setCognitions] = useState([]);
   const [isLoading, setIsLoading] = useState(false);
@@ -232,4 +232,4 @@ function InputMode() {
   );
 }
 
-export default InputMode;
+export default Dump;

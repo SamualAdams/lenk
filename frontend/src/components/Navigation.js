@@ -20,9 +20,12 @@ function Navigation() {
     return () => window.removeEventListener('mouseup', handleMouseUp);
   }, []);
 
-  const handleLogout = async () => {
-    await logout();
-    navigate('/login');
+  const handleLiftUp = (path) => {
+    if (isMouseDown) {
+      navigate(path);
+      setIsMouseDown(false);
+      setActiveMenu(null);
+    }
   };
 
   return (
@@ -34,31 +37,23 @@ function Navigation() {
         >
           {activeMenu === 'plus' && (
             <>
-              <div className="pre-nav-option">Dump</div>
-              <div className="pre-nav-option">Compose</div>
-              <div className="pre-nav-option">Stream</div>
+              <div onMouseUp={() => handleLiftUp('/dump')} className="pre-nav-option" role="button" tabIndex={0}>Dump</div>
+              <div onMouseUp={() => handleLiftUp('/compose')} className="pre-nav-option" role="button" tabIndex={0}>Compose</div>
+              <div onMouseUp={() => handleLiftUp('/stream')} className="pre-nav-option" role="button" tabIndex={0}>Stream</div>
             </>
           )}
           {activeMenu === 'search' && (
             <>
-              <div className="pre-nav-option">Find</div>
-              <div className="pre-nav-option">Collective</div>
-              <div className="pre-nav-option">People</div>
+              <div onMouseUp={() => handleLiftUp('/search')} className="pre-nav-option" role="button" tabIndex={0}>Find</div>
+              <div onMouseUp={() => handleLiftUp('/collective')} className="pre-nav-option" role="button" tabIndex={0}>Collective</div>
+              <div onMouseUp={() => handleLiftUp('/people')} className="pre-nav-option" role="button" tabIndex={0}>People</div>
             </>
           )}
           {activeMenu === 'user' && (
             <>
-              <div className="pre-nav-option">Profile</div>
-              <div className="pre-nav-option">Settings</div>
-              <div
-                className="pre-nav-option"
-                onMouseUp={handleLogout}
-                tabIndex={0}
-                role="button"
-                style={{ cursor: 'pointer' }}
-              >
-                Logout
-              </div>
+              <div onMouseUp={() => handleLiftUp('/profile')} className="pre-nav-option" role="button" tabIndex={0}>Profile</div>
+              <div onMouseUp={() => handleLiftUp('/settings')} className="pre-nav-option" role="button" tabIndex={0}>Settings</div>
+              <div onMouseUp={() => handleLiftUp('/logout')} className="pre-nav-option" role="button" tabIndex={0}>Logout</div>
             </>
           )}
         </div>

@@ -14,7 +14,6 @@
   content: '';
   position: absolute;
   inset: 0;
-  background-image: url('../../public/we_are_cactus.png');
   background-size: cover;
   filter: blur(35px);
   opacity: 0.2;

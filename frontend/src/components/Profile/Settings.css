@@ -1,0 +1,23 @@
+
+
+
+.account-links {
+  display: flex;
+  justify-content: center;
+  gap: 2rem;
+  padding: 1rem;
+  font-size: 1.1rem;
+}
+
+.account-links a {
+  color: #fff;
+  text-decoration: none;
+  padding: 0.5rem 1rem;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 0.5rem;
+  transition: background 0.2s;
+}
+
+.account-links a:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
