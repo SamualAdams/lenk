@@ -3,7 +3,7 @@
 import React, { useEffect, useState } from 'react';
 import { useDispatch, useSelector } from 'react-redux';
 import { Link } from 'react-router-dom';
-import { fetchCollective } from '../redux/actions/socialActions';
+import { fetchCollective } from '../../redux/actions/socialActions';
 import './CollectiveView.css';
 
 const CollectiveView = () => {

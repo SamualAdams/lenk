@@ -1,0 +1,63 @@
+.reading-mode-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  color: var(--primary-color);
+  width: 100%;
+  padding: 0;
+  overflow: hidden;
+  position: relative;
+  z-index: 0;
+}
+
+.reading-mode-container::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background-image: url('../../public/we_are_cactus.png');
+  background-size: cover;
+  filter: blur(35px);
+  opacity: 0.2;
+  z-index: -1;
+  pointer-events: none;
+}
+
+
+.simple-mobile-dock {
+  position: fixed;
+  bottom: .8rem;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 96vw;
+  max-width: 500px;
+  background: rgba(15,15,15,0.8);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: none !important;
+  box-shadow: none !important;
+  border-radius: 2rem;
+  /* background: transparent; */
+  padding: 0.4rem 0.5rem;
+  z-index: 10;
+}
+
+.simple-mobile-dock button {
+  flex: 1;
+  background: none;
+  border: none;
+  color: #f8f8f8;
+  font-size: 1.6rem;
+  border-radius: 50%;
+  transition: background 0.18s;
+  height: 3rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.simple-mobile-dock button:active,
+.simple-mobile-dock button:focus {
+  background: rgba(255,255,255,0.07);
+  outline: none;
+}

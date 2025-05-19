@@ -1,9 +1,10 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import axiosInstance from '../axiosConfig';
+import axiosInstance from '../../../axiosConfig';
 import './InputMode.css';
 import { FaStar, FaRegStar, FaTrashAlt, FaCopy } from 'react-icons/fa';
-import { useAuth } from '../context/AuthContext';
+import { useAuth } from '../../../context/AuthContext';
+import Navigation from '../../Navigation';
 
 function InputMode() {
   const { currentUser } = useAuth();
@@ -197,13 +198,7 @@ function InputMode() {
         </div>
       </main>
 
-      <footer className="mobile-footer">
-        <button className="collective-btn" onClick={handleCollectiveClick}>Collective</button>
-        <div className="bottom-button-row">
-          <button className="arcs-btn" onClick={handleArcsClick}>Arcs</button>
-          <button className="new-btn" onClick={handleNewCognitionClick}>New</button>
-        </div>
-      </footer>
+      <Navigation />
 
       {showNewCognitionModal && (
         <div className="modal-overlay" onClick={() => setShowNewCognitionModal(false)}>
