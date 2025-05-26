@@ -14,9 +14,8 @@
   bottom: .8rem;
   left: 50%;
   transform: translateX(-50%);
+  width: 100vw;
   height: 8vh;
-  /* width: 100vw; */
-  /* max-width: 500px; */
   background: rgba(15,15,15,0.8);
   display: flex;
   justify-content: space-between;
@@ -32,7 +31,6 @@
 .simple-mobile-dock button {
   width: 100% !important;
   height: 100% !important;
-  /* background: red !important; */
   border: none;
   color: #f8f8f8;
   font-size: 1.25rem;
@@ -64,7 +62,6 @@
   width: 96vw;
   max-width: 500px;
   background: none !important;
-  /* background: rgba(15,15,15,0.8); */
   border-radius: 50px;
   backdrop-filter: blur(6px);
   border: 3px solid rgba(255,255,255,0.05);
