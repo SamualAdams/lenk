@@ -4,59 +4,398 @@
   height: 100vh;
   color: var(--primary-color);
   width: 100%;
+  max-width: 600px; /* Match navigation max-width */
+  margin: 0 auto;
   padding: 0;
   overflow: hidden;
   position: relative;
-  z-index: 0;
+  background-color: var(--background-color);
+  box-sizing: border-box;
 }
 
-.reading-mode-container::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-size: cover;
-  filter: blur(35px);
-  opacity: 0.2;
-  z-index: -1;
-  pointer-events: none;
+/* Timeline Section - Fixed at top */
+.timeline-section {
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  background-color: var(--background-color);
+  border-bottom: 1px solid var(--border-color);
+  padding: 0.75rem 1rem;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  width: 100%;
+  box-sizing: border-box;
 }
 
+/* Main Content Area - 50/50 split with proper spacing for navigation */
+.main-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  height: calc(100vh - 120px - 80px); /* Subtract timeline height and navigation space */
+  overflow: hidden;
+  margin-bottom: 80px; /* Space for navigation */
+  box-sizing: border-box;
+}
 
-.simple-mobile-dock {
-  position: fixed;
-  bottom: .8rem;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 96vw;
-  max-width: 500px;
-  background: rgba(15,15,15,0.8);
+/* Node Section - Top Half */
+.node-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  border-bottom: 2px solid var(--border-color);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.node-header {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  border: none !important;
-  box-shadow: none !important;
-  border-radius: 2rem;
-  /* background: transparent; */
-  padding: 0.4rem 0.5rem;
-  z-index: 10;
+  align-items: flex-start;
+  margin-bottom: 1rem;
+  gap: 1rem;
 }
 
-.simple-mobile-dock button {
+.node-info {
   flex: 1;
+}
+
+.node-counter {
+  font-size: 0.85rem;
+  color: var(--secondary-color);
+  font-weight: 500;
+  display: block;
+  margin-bottom: 0.25rem;
+}
+
+.cognition-title {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--primary-color);
+  margin: 0;
+  line-height: 1.3;
+}
+
+.node-actions {
+  display: flex;
+  gap: 0.5rem;
+  flex-shrink: 0;
+}
+
+.star-btn,
+.edit-btn {
   background: none;
   border: none;
-  color: #f8f8f8;
-  font-size: 1.6rem;
-  border-radius: 50%;
-  transition: background 0.18s;
-  height: 3rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  color: var(--secondary-color);
+  font-size: 1.2rem;
+  padding: 0.5rem;
+  cursor: pointer;
+  border-radius: 6px;
+  transition: all 0.2s ease;
 }
 
-.simple-mobile-dock button:active,
-.simple-mobile-dock button:focus {
-  background: rgba(255,255,255,0.07);
+.star-btn:hover,
+.edit-btn:hover {
+  color: var(--primary-color);
+  background-color: var(--hover-color);
+}
+
+.star-btn[title*="Unstar"] {
+  color: #f1c232;
+}
+
+.node-content {
+  flex: 1;
+  background-color: var(--input-background);
+  border-radius: 8px;
+  padding: 1.25rem;
+  font-size: 1rem;
+  line-height: 1.6;
+  overflow-y: auto;
+  border: 1px solid var(--border-color);
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  box-sizing: border-box;
+}
+
+/* Synthesis Section - Bottom Half */
+.synthesis-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  padding: 1rem;
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+/* Preset Buttons */
+.preset-buttons {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+  overflow-x: auto;
+  padding-bottom: 0.5rem;
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+.preset-buttons::-webkit-scrollbar {
+  display: none;
+}
+
+.preset-btn {
+  background-color: var(--accent-color);
+  color: white;
+  border: none;
+  padding: 0.5rem 1rem;
+  border-radius: 20px;
+  font-size: 0.9rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.preset-btn:hover:not(:disabled) {
+  opacity: 0.9;
+  transform: translateY(-1px);
+}
+
+.preset-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Synthesis Tabs */
+.synthesis-tabs {
+  display: flex;
+  border-bottom: 2px solid var(--border-color);
+  margin-bottom: 1rem;
+  gap: 0.25rem;
+  align-items: center;
+}
+
+.tab-button {
+  background: none;
+  border: none;
+  padding: 0.75rem 1rem;
+  color: var(--secondary-color);
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  border-radius: 6px 6px 0 0;
+  transition: all 0.2s ease;
+  position: relative;
+}
+
+.tab-button:hover {
+  color: var(--primary-color);
+  background-color: var(--hover-color);
+}
+
+.tab-button.active {
+  color: var(--accent-color);
+  background-color: rgba(95, 159, 255, 0.1);
+}
+
+.tab-button.active::after {
+  content: '';
+  position: absolute;
+  bottom: -2px;
+  left: 0;
+  right: 0;
+  height: 2px;
+  background-color: var(--accent-color);
+}
+
+.saving-indicator {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--secondary-color);
+  font-size: 0.85rem;
+}
+
+/* Synthesis Content */
+.synthesis-content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0; /* Allow flex child to shrink */
+}
+
+.synthesis-textarea {
+  flex: 1;
+  background-color: var(--input-background);
+  color: var(--primary-color);
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem;
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: 1.5;
+  resize: none;
+  transition: border-color 0.2s ease;
+  white-space: pre-wrap;
+  box-sizing: border-box;
+  min-height: 100px;
+}
+
+.synthesis-textarea:focus {
   outline: none;
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 3px rgba(95, 159, 255, 0.1);
+}
+
+.synthesis-textarea::placeholder {
+  color: var(--secondary-color);
+  font-style: italic;
+}
+
+.synthesis-textarea[readonly] {
+  background-color: rgba(255, 255, 255, 0.02);
+  cursor: default;
+}
+
+/* Loading and Error States */
+.loading-state,
+.error-state {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  gap: 1rem;
+  color: var(--secondary-color);
+  font-size: 1.1rem;
+  margin-bottom: 80px; /* Space for navigation */
+}
+
+.loading-state .spinning {
+  font-size: 2rem;
+  color: var(--accent-color);
+}
+
+.error-state {
+  color: var(--danger-color, #ff5757);
+}
+
+/* Spinning Animation */
+.spinning {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Mobile Optimizations */
+@media (max-width: 768px) {
+  .reading-mode-container {
+    max-width: 100%;
+  }
+  
+  .timeline-section {
+    padding: 0.5rem;
+  }
+  
+  .node-section,
+  .synthesis-section {
+    padding: 0.75rem;
+  }
+  
+  .node-header {
+    margin-bottom: 0.75rem;
+  }
+  
+  .cognition-title {
+    font-size: 1rem;
+  }
+  
+  .node-content {
+    padding: 1rem;
+    font-size: 0.95rem;
+  }
+  
+  .preset-btn {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.85rem;
+  }
+  
+  .tab-button {
+    padding: 0.6rem 0.8rem;
+    font-size: 0.9rem;
+  }
+  
+  .synthesis-textarea {
+    padding: 0.75rem;
+    font-size: 0.95rem;
+  }
+  
+  .main-content {
+    height: calc(100vh - 100px - 80px); /* Adjust for mobile */
+  }
+}
+
+/* Ensure proper spacing on very small screens */
+@media (max-width: 480px) {
+  .main-content {
+    margin-bottom: 90px; /* Extra space on very small screens */
+  }
+  
+  .loading-state,
+  .error-state {
+    margin-bottom: 90px;
+  }
+}
+
+/* High contrast mode support */
+@media (prefers-contrast: high) {
+  .node-content,
+  .synthesis-textarea {
+    border-width: 2px;
+  }
+  
+  .tab-button.active::after {
+    height: 3px;
+  }
+}
+
+/* Reduced motion support */
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+    animation: none !important;
+  }
+}
+
+/* Focus styles for accessibility */
+.star-btn:focus,
+.edit-btn:focus,
+.preset-btn:focus,
+.tab-button:focus {
+  outline: 2px solid var(--accent-color);
+  outline-offset: 2px;
+}
+
+.synthesis-textarea:focus {
+  box-shadow: 0 0 0 3px rgba(95, 159, 255, 0.3);
+}
+
+/* Dark mode adjustments */
+@media (prefers-color-scheme: dark) {
+  .node-content {
+    background-color: rgba(255, 255, 255, 0.02);
+  }
+  
+  .synthesis-textarea[readonly] {
+    background-color: rgba(255, 255, 255, 0.01);
+  }
 }

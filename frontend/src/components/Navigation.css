@@ -11,12 +11,12 @@
 
 .simple-mobile-dock {
   position: fixed;
-  bottom: .8rem;
+  bottom: 0.8rem;
   left: 50%;
   transform: translateX(-50%);
-  height: 8vh;
-  /* width: 100vw; */
-  /* max-width: 500px; */
+  height: 60px;
+  width: 96vw;
+  max-width: 600px; /* Match content max-width */
   background: rgba(15,15,15,0.8);
   display: flex;
   justify-content: space-between;
@@ -24,7 +24,7 @@
   box-shadow: none !important;
   border-radius: 50px;
   padding: 0 !important;
-  z-index: 10;
+  z-index: 1000; /* Higher z-index */
   backdrop-filter: blur(6px);
   overflow: hidden;
 }
@@ -32,7 +32,6 @@
 .simple-mobile-dock button {
   width: 100% !important;
   height: 100% !important;
-  /* background: red !important; */
   border: none;
   color: #f8f8f8;
   font-size: 1.25rem;
@@ -42,33 +41,37 @@
   align-items: center;
   justify-content: center;
   text-decoration: none;
+  background: none;
+  cursor: pointer;
 }
 
-.simple-mobile-dock a:active,
-.simple-mobile-dock a:focus {
+.simple-mobile-dock button:active,
+.simple-mobile-dock button:focus {
   background: rgba(255,255,255,0.07);
   outline: none;
 }
 
+.simple-mobile-dock button:hover {
+  background: rgba(255,255,255,0.07);
+}
+
 .pre-nav-block {
   position: fixed;
-  bottom: 10vh;
+  bottom: 80px; /* Above the dock */
   left: 50%;
   transform: translateX(-50%);
-  z-index: 10;
+  z-index: 999;
   display: flex;
   justify-content: space-between;
   align-items: center;
   box-shadow: none !important;
-  height: 3.8rem;
+  height: 60px;
   width: 96vw;
-  max-width: 500px;
-  background: none !important;
-  /* background: rgba(15,15,15,0.8); */
+  max-width: 600px; /* Match content max-width */
+  background: rgba(15,15,15,0.8) !important;
   border-radius: 50px;
   backdrop-filter: blur(6px);
-  border: 3px solid rgba(255,255,255,0.05);
-  margin-bottom: .5vh;
+  border: 1px solid rgba(255,255,255,0.1);
   animation: fadeSlideIn 0.18s ease-out;
 }
 
@@ -85,9 +88,11 @@
   align-items: center;
   transition: background 0.15s ease;
   border-radius: 50px;
+  cursor: pointer;
 }
 
-.pre-nav-option:hover, .pre-nav-option:focus {
+.pre-nav-option:hover, 
+.pre-nav-option:focus {
   background: rgba(255,255,255,0.07);
   outline: none;
 }
