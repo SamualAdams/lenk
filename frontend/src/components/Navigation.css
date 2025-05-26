@@ -9,6 +9,11 @@
   }
 }
 
+.navigation-container {
+  position: relative;
+  z-index: 1000;
+}
+
 .simple-mobile-dock {
   position: fixed;
   bottom: 0.8rem;
@@ -16,7 +21,7 @@
   transform: translateX(-50%);
   height: 60px;
   width: 96vw;
-  max-width: 600px; /* Match content max-width */
+  max-width: 600px;
   background: rgba(15,15,15,0.8);
   display: flex;
   justify-content: space-between;
@@ -24,7 +29,7 @@
   box-shadow: none !important;
   border-radius: 50px;
   padding: 0 !important;
-  z-index: 1000; /* Higher z-index */
+  z-index: 1000;
   backdrop-filter: blur(6px);
   overflow: hidden;
 }
@@ -36,7 +41,7 @@
   color: #f8f8f8;
   font-size: 1.25rem;
   border-radius: 0 !important;
-  transition: background 0.18s;
+  transition: all 0.2s ease;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -45,29 +50,35 @@
   cursor: pointer;
 }
 
+/* Active state for highlighted icons */
+.simple-mobile-dock button.active {
+  background: rgba(95, 159, 255, 0.3);
+  color: white;
+}
+
 .simple-mobile-dock button:active,
 .simple-mobile-dock button:focus {
   background: rgba(255,255,255,0.07);
   outline: none;
 }
 
-.simple-mobile-dock button:hover {
+.simple-mobile-dock button:hover:not(.active) {
   background: rgba(255,255,255,0.07);
 }
 
 .pre-nav-block {
   position: fixed;
-  bottom: 80px; /* Above the dock */
+  bottom: 80px;
   left: 50%;
   transform: translateX(-50%);
   z-index: 999;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  box-shadow: none !important;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2) !important;
   height: 60px;
   width: 96vw;
-  max-width: 600px; /* Match content max-width */
+  max-width: 600px;
   background: rgba(15,15,15,0.8) !important;
   border-radius: 50px;
   backdrop-filter: blur(6px);
@@ -86,13 +97,25 @@
   display: flex;
   justify-content: center;
   align-items: center;
-  transition: background 0.15s ease;
+  transition: all 0.15s ease;
   border-radius: 50px;
   cursor: pointer;
 }
 
-.pre-nav-option:hover, 
-.pre-nav-option:focus {
+.pre-nav-option.highlighted {
+  background: rgba(95, 159, 255, 0.3);
+  color: white;
+}
+
+.pre-nav-option:hover:not(.highlighted), 
+.pre-nav-option:focus:not(.highlighted) {
   background: rgba(255,255,255,0.07);
   outline: none;
+}
+
+/* Touch device optimizations */
+@media (hover: none) {
+  .pre-nav-option:active {
+    background: rgba(95, 159, 255, 0.3);
+  }
 }

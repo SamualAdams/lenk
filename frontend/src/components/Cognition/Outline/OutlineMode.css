@@ -1,0 +1,162 @@
+.outline-mode-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  padding: 1rem;
+  color: var(--primary-color);
+  background-color: var(--background-color);
+}
+
+/* When used within Compose view */
+.outline-mode-container.in-compose-view {
+  height: auto;
+  padding: 0;
+  margin-bottom: 60px; /* Space for navigation bar */
+}
+
+.outline-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.5rem 0;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--border-color);
+}
+
+.cognition-title {
+  font-size: 1.5rem;
+  margin: 0;
+  flex: 1;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.back-button {
+  background: none;
+  border: none;
+  color: var(--primary-color);
+  font-size: 1.2rem;
+  cursor: pointer;
+  padding: 0.5rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.save-status {
+  display: flex;
+  align-items: center;
+  font-size: 0.8rem;
+  min-width: 70px;
+  justify-content: flex-end;
+}
+
+.saving {
+  color: var(--accent-color);
+}
+
+.saved {
+  color: var(--success-color);
+}
+
+.error {
+  color: var(--danger-color);
+}
+
+.outline-editor {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  margin-bottom: 60px; /* Space for the navigation bar */
+  position: relative;
+}
+
+/* When in compose view, don't need extra margin */
+.in-compose-view .outline-editor {
+  margin-bottom: 0;
+}
+
+.node-controls {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 0.5rem;
+}
+
+.control-button {
+  background-color: var(--input-background);
+  border: 1px solid var(--border-color);
+  color: var(--primary-color);
+  border-radius: 4px;
+  padding: 0.5rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: background-color 0.2s ease;
+}
+
+.control-button:hover {
+  background-color: var(--hover-color);
+}
+
+.add-node {
+  color: var(--success-color);
+}
+
+.delete-node {
+  color: var(--danger-color);
+}
+
+.node-editor {
+  flex: 1;
+  min-height: 200px;
+  background-color: var(--input-background);
+  border: 1px solid var(--border-color);
+  border-radius: 4px;
+  padding: 1rem;
+  color: var(--primary-color);
+  font-family: inherit;
+  font-size: 1rem;
+  line-height: 1.6;
+  resize: none;
+}
+
+.node-editor:focus {
+  outline: none;
+  border-color: var(--accent-color);
+}
+
+.outline-loading,
+.outline-error {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100vh;
+  font-size: 1.2rem;
+  color: var(--primary-color);
+}
+
+.outline-error {
+  color: var(--danger-color);
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .outline-mode-container {
+    padding: 0.5rem;
+  }
+  
+  .in-compose-view {
+    padding: 0;
+  }
+  
+  .cognition-title {
+    font-size: 1.2rem;
+  }
+  
+  .node-editor {
+    padding: 0.75rem;
+  }
+}

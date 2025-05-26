@@ -10,6 +10,7 @@ import CollectiveView from './components/Search/CollectiveView';
 import Compose from './components/Cognition/Compose/Compose';
 import Dump from './components/Cognition/Compose/Dump';
 import Stream from './components/Cognition/Compose/Stream';
+import OutlineMode from './components/Cognition/Outline/OutlineMode';
 import Account from './components/Profile/Account';
 import Settings from './components/Profile/Settings';
 import 'normalize.css';
@@ -60,6 +61,11 @@ function App() {
             <Route path="/stream" element={
               <ProtectedRoute>
                 <Stream />
+              </ProtectedRoute>
+            } />
+            <Route path="/outline/:id" element={
+              <ProtectedRoute>
+                <OutlineMode />
               </ProtectedRoute>
             } />
             <Route path="/profile" element={
