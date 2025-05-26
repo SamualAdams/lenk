@@ -560,11 +560,13 @@ class SynthesisViewSet(viewsets.ModelViewSet):
     def add_or_update(self, request):
         """
         Add or update the current user's synthesis for a given node.
-        Only one synthesis per (user, node) is allowed.
+        Only one synthesis per (user, node, source) is allowed.
         Returns the updated synthesis if successful.
         """
         node_id = request.data.get('node_id')
         content = request.data.get('content')
+        source = request.data.get('source', 'user')  # Default to 'user' source
+        
         if not node_id:
             return Response({'error': 'node_id is required'}, status=status.HTTP_400_BAD_REQUEST)
         try:
@@ -572,10 +574,12 @@ class SynthesisViewSet(viewsets.ModelViewSet):
             # Permission: Only allow access if user is the cognition owner or the cognition is public
             if node.cognition.user != request.user and not node.cognition.is_public:
                 return Response({'error': 'You do not have permission to access this node'}, status=status.HTTP_403_FORBIDDEN)
-            # Enforce one synthesis per user/node
+            
+            # Enforce one synthesis per user/node/source combination
             synthesis, created = Synthesis.objects.update_or_create(
                 node=node,
                 user=request.user,
+                source=source,
                 defaults={'content': content or ''}
             )
             serializer = SynthesisSerializer(synthesis, context={'request': request})

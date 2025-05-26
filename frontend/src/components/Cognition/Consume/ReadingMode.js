@@ -130,16 +130,60 @@ function ReadingMode() {
         isAuthor: synthesis.is_author,
         source: synthesis.source,
         userId: synthesis.user_id,
+        currentUserId: currentUser?.id,
         content: synthesis.content?.substring(0, 50) + '...'
       });
       
-      if (synthesis.is_author) {
-        setAuthorSynthesis(synthesis.content || '');
-      } else if (synthesis.source === 'ai') {
+      // Check source first, then fallback to author status
+      if (synthesis.source === 'ai') {
+        console.log('Setting AI synthesis:', synthesis.full_content?.substring(0, 30) + '...');
         setAiSynthesis(synthesis.full_content || synthesis.content || '');
+      } else if (synthesis.is_author || (synthesis.user_id === cognition?.user_id)) {
+        console.log('Setting author synthesis:', synthesis.content?.substring(0, 30) + '...');
+        setAuthorSynthesis(synthesis.content || '');
       } else if (synthesis.user_id === currentUser?.id) {
+        console.log('Setting user synthesis:', synthesis.content?.substring(0, 30) + '...');
         setUserSynthesis(synthesis.content || '');
       }
+    });
+  };
+
+  const updateLocalSynthesis = (nodeId, savedSynthesis) => {
+    console.log('Updating local synthesis:', { nodeId, savedSynthesis });
+    
+    setCognition(prevCognition => {
+      if (!prevCognition || !prevCognition.nodes) return prevCognition;
+      
+      const updatedNodes = prevCognition.nodes.map(node => {
+        if (node.id === nodeId) {
+          const existingSyntheses = node.syntheses || [];
+          
+          // Remove any existing synthesis from the same user
+          const filteredSyntheses = existingSyntheses.filter(
+            synthesis => synthesis.user_id !== savedSynthesis.user_id
+          );
+          
+          // Add the updated synthesis
+          const updatedSyntheses = [...filteredSyntheses, savedSynthesis];
+          
+          console.log('Node syntheses updated:', {
+            nodeId,
+            oldCount: existingSyntheses.length,
+            newCount: updatedSyntheses.length
+          });
+          
+          return {
+            ...node,
+            syntheses: updatedSyntheses
+          };
+        }
+        return node;
+      });
+      
+      return {
+        ...prevCognition,
+        nodes: updatedNodes
+      };
     });
   };
 
@@ -168,11 +212,15 @@ function ReadingMode() {
         
         const response = await axiosInstance.post('/syntheses/add_or_update/', {
           node_id: nodeId,
-          content: content || ''
+          content: content || '',
+          source: source
         });
         
         console.log('Synthesis saved successfully:', response.data);
         setLastSaveStatus('Saved');
+        
+        // Update local cognition state with saved synthesis
+        updateLocalSynthesis(nodeId, response.data);
         
         // Clear status after 2 seconds
         setTimeout(() => setLastSaveStatus(''), 2000);
@@ -236,9 +284,13 @@ function ReadingMode() {
       try {
         const saveResponse = await axiosInstance.post('/syntheses/add_or_update/', {
           node_id: nodeId,
-          content: newAiSynthesis
+          content: newAiSynthesis,
+          source: 'ai'  // Explicitly set source as 'ai'
         });
         console.log('AI synthesis saved successfully:', saveResponse.data);
+        
+        // Update local cognition state with saved AI synthesis
+        updateLocalSynthesis(nodeId, saveResponse.data);
       } catch (saveErr) {
         console.error('Failed to save AI synthesis:', saveErr);
         alert('AI response generated but failed to save. Please try again.');

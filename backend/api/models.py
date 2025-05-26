@@ -71,7 +71,7 @@ class Synthesis(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ['node', 'user']
+        unique_together = ['node', 'user', 'source']
 
     def __str__(self):
         return f"Synthesis by {self.user.username} for {self.node}"
