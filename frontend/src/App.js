@@ -1,5 +1,5 @@
 import React from 'react';
-import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import InputMode from './components/InputMode';
 import ReadingMode from './components/ReadingMode';
 import Navigation from './components/Navigation';
@@ -10,13 +10,14 @@ import { AuthProvider } from './context/AuthContext';
 import CollectiveView from './components/CollectiveView';
 import './App.css';
 
-function App() {
+function AppContent() {
+  const location = useLocation();
+  const isReadingMode = location.pathname.includes('/cognition/');
+
   return (
-    <AuthProvider>
-      <Router>
-        <div className="App">
-          <Navigation />
-          <Routes>
+    <div className="App">
+      {!isReadingMode && <Navigation />}
+      <Routes>
             {/* Public routes */}
             <Route path="/login" element={<Login />} />
             <Route path="/register" element={<Register />} />
@@ -37,8 +38,16 @@ function App() {
                 <CollectiveView />
               </ProtectedRoute>
             } />
-          </Routes>
-        </div>
+        </Routes>
+      </div>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <Router>
+        <AppContent />
       </Router>
     </AuthProvider>
   );

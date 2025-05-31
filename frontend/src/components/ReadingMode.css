@@ -1,3 +1,8 @@
+/* Hide scrollbar for webkit browsers (Chrome, Safari, Edge) */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
 .illumination-indicator {
   font-size: 1rem;
   opacity: 0.6;
