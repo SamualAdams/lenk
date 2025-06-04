@@ -1,7 +1,7 @@
 # api/serializers.py
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Cognition, Node, Synthesis, PresetResponse, SynthesisPresetLink, Arc, UserProfile
+from .models import Cognition, Node, Synthesis, PresetResponse, SynthesisPresetLink, Arc, UserProfile, Widget, WidgetInteraction
 
 class UserProfileSerializer(serializers.ModelSerializer):
     username = serializers.CharField(source='user.username', read_only=True)
@@ -42,6 +42,38 @@ class PresetResponseSerializer(serializers.ModelSerializer):
         model = PresetResponse
         fields = ['id', 'title', 'content', 'category', 'created_at']
 
+class WidgetInteractionSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WidgetInteraction
+        fields = ['id', 'completed', 'quiz_answer', 'interaction_data', 'created_at']
+
+class WidgetSerializer(serializers.ModelSerializer):
+    user_interaction = serializers.SerializerMethodField()
+    username = serializers.CharField(source='user.username', read_only=True)
+    is_author_widget = serializers.ReadOnlyField()
+    is_reader_widget = serializers.ReadOnlyField()
+    
+    class Meta:
+        model = Widget
+        fields = [
+            'id', 'node', 'widget_type', 'title', 'content', 'quiz_question', 
+            'quiz_choices', 'quiz_correct_answer', 'quiz_explanation',
+            'llm_preset', 'llm_custom_prompt', 'is_required', 'position',
+            'username', 'is_author_widget', 'is_reader_widget', 
+            'user_interaction', 'created_at', 'updated_at'
+        ]
+        read_only_fields = ['id', 'username', 'created_at', 'updated_at']
+    
+    def get_user_interaction(self, obj):
+        request = self.context.get('request')
+        if not request or not request.user.is_authenticated:
+            return None
+        
+        interaction = obj.interactions.filter(user=request.user).first()
+        if interaction:
+            return WidgetInteractionSerializer(interaction).data
+        return None
+
 class SynthesisPresetLinkSerializer(serializers.ModelSerializer):
     preset_response = PresetResponseSerializer(read_only=True)
     
@@ -71,12 +103,13 @@ class SynthesisSerializer(serializers.ModelSerializer):
 
 class NodeSerializer(serializers.ModelSerializer):
     syntheses = serializers.SerializerMethodField()
+    widgets = serializers.SerializerMethodField()
 
     class Meta:
         model = Node
         fields = ['id', 'cognition', 'content', 'position', 'character_count',
-                  'is_illuminated', 'created_at', 'syntheses']
-        read_only_fields = ['syntheses', 'id', 'created_at']
+                  'is_illuminated', 'created_at', 'syntheses', 'widgets']
+        read_only_fields = ['syntheses', 'widgets', 'id', 'created_at']
     
     # Supports multiple syntheses per node: 
     # Returns author's synthesis and the current user's synthesis (if user is not author).
@@ -110,6 +143,34 @@ class NodeSerializer(serializers.ModelSerializer):
         
 
         return syntheses
+    
+    def get_widgets(self, obj):
+        """Temporarily return empty list during migration setup"""
+        return []
+        
+        # TODO: Re-enable after successful migration
+        # request = self.context.get('request')
+        # if not request:
+        #     return []
+        # 
+        # user = request.user
+        # 
+        # # Get author widgets (visible to all)
+        # author_widgets = obj.widgets.filter(
+        #     user=obj.cognition.user
+        # ).order_by('position', 'created_at')
+        # 
+        # # Get reader widgets (only current user's)
+        # reader_widgets = []
+        # if user.is_authenticated:
+        #     reader_widgets = obj.widgets.filter(
+        #         user=user,
+        #         widget_type__startswith='reader_'
+        #     ).order_by('position', 'created_at')
+        # 
+        # # Combine and serialize
+        # all_widgets = list(author_widgets) + list(reader_widgets)
+        # return WidgetSerializer(all_widgets, many=True, context=self.context).data
 
 class CognitionSerializer(serializers.ModelSerializer):
     nodes_count = serializers.SerializerMethodField()

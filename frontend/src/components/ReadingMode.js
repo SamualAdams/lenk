@@ -2,7 +2,9 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import debounce from 'lodash.debounce';
 import { useParams, useNavigate } from "react-router-dom";
-import { FaTrashAlt, FaHome, FaStar, FaRegStar, FaEdit, FaPlus, FaCommentDots, FaLightbulb } from "react-icons/fa";
+import { FaTrashAlt, FaHome, FaStar, FaRegStar, FaEdit, FaPlus, FaCommentDots, FaLightbulb, FaCut, FaLink, FaArrowUp, FaArrowDown, FaStepBackward, FaStepForward, FaClipboard, FaExclamationTriangle } from "react-icons/fa";
+import WidgetCard from './widgets/WidgetCard';
+import WidgetCreator from './widgets/WidgetCreator';
 import axiosInstance from "../axiosConfig";
 import { summarizeNode } from "../axiosConfig";
 import "./ReadingMode.css";
@@ -28,6 +30,8 @@ function ReadingMode() {
   const [pasteText, setPasteText] = useState('');
   const [isProcessingPaste, setIsProcessingPaste] = useState(false);
   const [cursorPosition, setCursorPosition] = useState(0);
+  const [showWidgetCreator, setShowWidgetCreator] = useState(false);
+  const [blockedByRequired, setBlockedByRequired] = useState(false);
 
   const currentNode = nodes[currentNodeIndex] || null;
   const [nodeText, setNodeText] = useState("");
@@ -58,19 +62,30 @@ function ReadingMode() {
     if (!window.confirm("Are you sure you want to delete this node?")) return;
     
     try {
-      await axiosInstance.delete(`/nodes/${currentNode.id}/`);
+      const currentIndex = currentNodeIndex;
+      const totalNodes = nodes.length;
       
-      // Move to previous node if possible, otherwise next
-      const newIndex = currentNodeIndex > 0 ? currentNodeIndex - 1 : 0;
+      await axiosInstance.delete(`/nodes/${currentNode.id}/`);
       
       await fetchCognition();
       
-      // Set new index, accounting for the deleted node
-      if (nodes.length > 1) {
-        setCurrentNodeIndex(Math.min(newIndex, nodes.length - 2));
+      // Smart positioning after deletion
+      let newIndex = currentIndex;
+      if (totalNodes === 1) {
+        // If it was the only node, stay at 0
+        newIndex = 0;
+      } else if (currentIndex === totalNodes - 1) {
+        // If we deleted the last node, go to the new last node
+        newIndex = currentIndex - 1;
       } else {
-        setCurrentNodeIndex(0);
+        // Otherwise, stay at the same index (which now shows the next node)
+        newIndex = currentIndex;
       }
+      
+      // Force scroll to the correct position after refresh
+      setTimeout(() => {
+        scrollToNode(newIndex);
+      }, 100);
       
       displayToast("Node deleted");
     } catch (err) {
@@ -89,11 +104,19 @@ function ReadingMode() {
     if (!window.confirm("Merge this node with the next node?")) return;
     
     try {
+      const currentIndex = currentNodeIndex;
+      
       await axiosInstance.post(`/nodes/${currentNode.id}/merge_with_next/`, {
         separator: ' '
       });
       
       await fetchCognition();
+      
+      // Force scroll to the correct position after refresh
+      setTimeout(() => {
+        scrollToNode(currentIndex);
+      }, 100);
+      
       displayToast("Nodes merged successfully");
     } catch (err) {
       const errorMsg = err.response?.data?.error || "Failed to merge nodes";
@@ -183,24 +206,49 @@ function ReadingMode() {
   const handleSplitNode = async () => {
     if (!currentNode || !isEditMode) return;
     
-    const content = nodeText;
-    const splitPoint = cursorPosition;
+    // Get the current cursor position from the textarea
+    let splitPoint = 0;
+    if (textareaRef.current) {
+      splitPoint = textareaRef.current.selectionStart;
+    } else {
+      splitPoint = cursorPosition;
+    }
+    
+    // Use the current nodeText which is the edited version
+    const content = nodeText || currentNode.content;
     const beforeContent = content.substring(0, splitPoint).trim();
     const afterContent = content.substring(splitPoint).trim();
     
+    console.log('Split debug:', {
+      splitPoint,
+      contentLength: content.length,
+      beforeContent: beforeContent.substring(0, 20) + '...',
+      afterContent: afterContent.substring(0, 20) + '...',
+      beforeLength: beforeContent.length,
+      afterLength: afterContent.length
+    });
+    
     if (!beforeContent || !afterContent) {
-      displayToast("Cannot split - need content on both sides of cursor");
+      displayToast(`Cannot split - need content on both sides of cursor (split at ${splitPoint})`);
       return;
     }
     
     try {
-      // Use the backend's split_node endpoint instead of manual splitting
+      const currentIndex = currentNodeIndex;
+      
+      // Use the backend's split_node endpoint
       await axiosInstance.post(`/nodes/${currentNode.id}/split_node/`, {
         split_position: splitPoint
       });
       
       // Refresh cognition data
       await fetchCognition();
+      
+      // Force scroll to the correct position after refresh
+      setTimeout(() => {
+        scrollToNode(currentIndex);
+      }, 100);
+      
       displayToast("Node split successfully");
     } catch (err) {
       const errorMsg = err.response?.data?.error || "Failed to split node";
@@ -284,6 +332,84 @@ function ReadingMode() {
     }
   };
 
+
+  // Widget functions
+  const createWidget = async (widgetData, isLLM = false) => {
+    try {
+      let response;
+      
+      console.log('Creating widget:', { widgetData, isLLM }); // Debug log
+      
+      if (isLLM) {
+        // Use the special LLM endpoint
+        console.log('Using LLM endpoint');
+        response = await axiosInstance.post('/widgets/create_llm_widget/', {
+          node_id: widgetData.node,
+          llm_preset: widgetData.llm_preset,
+          custom_prompt: widgetData.llm_custom_prompt || ''
+        });
+      } else {
+        // Standard widget creation - ensure content is provided
+        console.log('Using standard endpoint');
+        
+        // For non-LLM widgets, ensure content is not empty
+        if (!widgetData.content || !widgetData.content.trim()) {
+          throw new Error('Content is required for this widget type');
+        }
+        
+        response = await axiosInstance.post('/widgets/', widgetData);
+      }
+      
+      await fetchCognition(); // Refresh to get updated widgets
+      setShowWidgetCreator(false);
+      displayToast('Widget created successfully');
+    } catch (err) {
+      console.error('Error creating widget:', err);
+      console.error('Request data:', widgetData);
+      const errorMsg = err.response?.data?.error || err.response?.data?.content?.[0] || err.message || 'Failed to create widget';
+      setError(errorMsg);
+    }
+  };
+
+  const deleteWidget = async (widgetId) => {
+    if (!window.confirm('Are you sure you want to delete this widget?')) return;
+    
+    try {
+      await axiosInstance.delete(`/widgets/${widgetId}/`);
+      await fetchCognition();
+      displayToast('Widget deleted');
+    } catch (err) {
+      console.error('Error deleting widget:', err);
+      setError('Failed to delete widget');
+    }
+  };
+
+  const interactWithWidget = async (widgetId, interactionData) => {
+    try {
+      await axiosInstance.post(`/widgets/${widgetId}/interact/`, interactionData);
+      await fetchCognition(); // Refresh to update interaction state
+    } catch (err) {
+      console.error('Error recording widget interaction:', err);
+      setError('Failed to record interaction');
+    }
+  };
+
+  const editWidget = (widget) => {
+    // For now, just show a toast - we can implement edit functionality later
+    displayToast('Widget editing coming soon!');
+  };
+
+  // Check if current node has required widgets that aren't completed
+  const checkRequiredWidgets = useCallback(() => {
+    if (!currentNode || !currentNode.widgets) {
+      setBlockedByRequired(false);
+      return;
+    }
+
+    const requiredWidgets = currentNode.widgets.filter(w => w.is_required && w.is_author_widget);
+    const hasIncomplete = requiredWidgets.some(w => !w.user_interaction?.completed);
+    setBlockedByRequired(hasIncomplete);
+  }, [currentNode]);
 
   // Handle bulk paste
   const handleBulkPaste = () => {
@@ -373,6 +499,11 @@ function ReadingMode() {
   );
 
   const goToNextNode = () => {
+    if (blockedByRequired && !isOwner) {
+      displayToast('Please complete all required widgets before continuing');
+      return;
+    }
+    
     if (currentNodeIndex < nodes.length - 1) {
       scrollToNode(currentNodeIndex + 1);
     }
@@ -463,6 +594,11 @@ function ReadingMode() {
       setHasUserSynthesis(false);
     }
   }, [nodes, currentNodeIndex]);
+
+  // Check required widgets when node changes
+  useEffect(() => {
+    checkRequiredWidgets();
+  }, [checkRequiredWidgets]);
 
   // Keyboard navigation
   useEffect(() => {
@@ -675,98 +811,15 @@ function ReadingMode() {
         position: 'relative',
         height: `${availableHeight}px`
       }}>
-        {/* Scrollable Node Cards */}
-        <div 
-          ref={scrollContainerRef}
-          onScroll={debouncedHandleScroll}
-          className="hide-scrollbar"
-          style={{
-            flex: 1,
-            height: '100%',
-            overflowY: 'auto',
-            overflowX: 'hidden',
-            scrollSnapType: 'y mandatory',
-            scrollBehavior: 'smooth',
-            scrollbarWidth: 'none', /* Firefox */
-            msOverflowStyle: 'none'  /* IE and Edge */
-          }}
-        >
-          {nodes.map((node, index) => (
-            <div
-              key={node.id}
-              style={{
-                height: `${availableHeight}px`,
-                display: 'flex',
-                flexDirection: 'column',
-                justifyContent: 'center',
-                padding: '2rem',
-                opacity: index === currentNodeIndex ? 1 : 0.4,
-                transform: index === currentNodeIndex ? 'scale(1)' : 'scale(0.95)',
-                scrollSnapAlign: 'start'
-              }}
-            >
-              <div style={{
-                maxWidth: '600px',
-                margin: '0 auto',
-                width: '100%'
-              }}>
-                {/* Node content - editable in edit mode */}
-                {isEditMode ? (
-                  <textarea
-                    ref={textareaRef}
-                    value={nodeText}
-                    onChange={handleNodeContentChange}
-                    onSelect={(e) => setCursorPosition(e.target.selectionStart)}
-                    style={{
-                      width: '100%',
-                      minHeight: '200px',
-                      fontSize: '1.4rem',
-                      lineHeight: '1.6',
-                      color: 'var(--primary-color)',
-                      backgroundColor: 'var(--input-background)',
-                      border: '1px solid var(--border-color)',
-                      borderRadius: '8px',
-                      padding: '1rem',
-                      marginBottom: '1.5rem',
-                      resize: 'vertical',
-                      outline: 'none',
-                      fontFamily: 'inherit'
-                    }}
-                    placeholder="Edit node content..."
-                  />
-                ) : (
-                  <div style={{
-                    fontSize: '1.4rem',
-                    lineHeight: '1.6',
-                    color: 'var(--primary-color)',
-                    textAlign: 'left',
-                    marginBottom: '1.5rem'
-                  }}>
-                    {node.content}
-                  </div>
-                )}
-                
-                {/* Node label under the text */}
-                <div style={{
-                  fontSize: '0.9rem',
-                  color: 'var(--secondary-color)',
-                  fontWeight: '500',
-                  textAlign: 'left'
-                }}>
-                  NODE {index + 1} OF {nodes.length}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Vertical Timeline with horizontal lines */}
+        {/* Vertical Timeline */}
         <div style={{
           width: '12px',
           backgroundColor: 'var(--border-color)',
           position: 'relative',
           cursor: 'pointer',
-          flexShrink: 0
+          flexShrink: 0,
+          zIndex: 40,
+          height: '100%'
         }}>
           {nodes.map((node, index) => {
             // Calculate proportional height based on character count
@@ -780,30 +833,198 @@ function ReadingMode() {
                 onClick={() => handleTimelineClick(index)}
                 style={{
                   height: `${heightPercent}%`,
-                  backgroundColor: index === currentNodeIndex ? 'var(--accent-color)' : 'transparent',
-                  borderBottom: '1px solid var(--hover-color)',
                   transition: 'all 0.2s',
-                  minHeight: '15px',
+                  minHeight: '3px',
                   opacity: isTransitioning ? 0.7 : 1,
                   cursor: isTransitioning ? 'not-allowed' : 'pointer',
                   position: 'relative',
                   display: 'flex',
                   alignItems: 'flex-end',
                   justifyContent: 'center',
-                  paddingBottom: '2px'
+                  overflow: 'hidden',
+                  boxSizing: 'border-box'
                 }}
               >
+                {/* Blue background for current node */}
+                {index === currentNodeIndex && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'var(--accent-color)',
+                    zIndex: 1
+                  }} />
+                )}
+                
                 {/* Horizontal line indicators for node length */}
                 <div style={{
                   width: '90%',
                   height: '2px',
                   backgroundColor: index === currentNodeIndex ? 'white' : 'var(--secondary-color)',
                   opacity: 0.9,
-                  borderRadius: '1px'
+                  borderRadius: '1px',
+                  position: 'relative',
+                  zIndex: 2
                 }} />
               </div>
             );
           })}
+        </div>
+
+        {/* Content Wrapper for Node and Synthesis */}
+        <div style={{
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          position: 'relative'
+        }}>
+          {/* Scrollable Node Cards */}
+          <div 
+            ref={scrollContainerRef}
+            onScroll={debouncedHandleScroll}
+            className="hide-scrollbar"
+            style={{
+              flex: 1,
+              height: '100%',
+              overflowY: 'auto',
+              overflowX: 'hidden',
+              scrollSnapType: 'y mandatory',
+              scrollBehavior: 'smooth',
+              scrollbarWidth: 'none',
+              msOverflowStyle: 'none'
+            }}
+          >
+            {nodes.map((node, index) => (
+              <div
+                key={node.id}
+                style={{
+                  height: `${availableHeight}px`,
+                  display: 'flex',
+                  flexDirection: 'column',
+                  justifyContent: 'center',
+                  padding: '2rem',
+                  opacity: index === currentNodeIndex ? 1 : 0.4,
+                  transform: index === currentNodeIndex ? 'scale(1)' : 'scale(0.95)',
+                  scrollSnapAlign: 'start'
+                }}
+              >
+                <div style={{
+                  maxWidth: '600px',
+                  margin: '0 auto',
+                  width: '100%',
+                  maxHeight: '100%',
+                  overflowY: 'auto',
+                  display: 'flex',
+                  flexDirection: 'column',
+                  flex: 1
+                }}>
+                  {/* Node content - editable in edit mode */}
+                  {isEditMode && index === currentNodeIndex ? (
+                    <textarea
+                      ref={textareaRef}
+                      value={nodeText}
+                      onChange={handleNodeContentChange}
+                      onSelect={(e) => setCursorPosition(e.target.selectionStart)}
+                      onFocus={(e) => setCursorPosition(e.target.selectionStart)}
+                      onClick={(e) => setCursorPosition(e.target.selectionStart)}
+                      onKeyUp={(e) => setCursorPosition(e.target.selectionStart)}
+                      style={{
+                        width: '100%',
+                        minHeight: '200px',
+                        maxHeight: '60vh',
+                        fontSize: '1.4rem',
+                        lineHeight: '1.6',
+                        color: 'var(--primary-color)',
+                        backgroundColor: 'var(--input-background)',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '8px',
+                        padding: '1rem',
+                        marginBottom: '1.5rem',
+                        resize: 'vertical',
+                        outline: 'none',
+                        fontFamily: 'inherit',
+                        overflowY: 'auto',
+                        boxSizing: 'border-box'
+                      }}
+                      placeholder="Edit node content..."
+                    />
+                  ) : (
+                    <div style={{
+                      fontSize: '1.4rem',
+                      lineHeight: '1.6',
+                      color: 'var(--primary-color)',
+                      textAlign: 'left',
+                      marginBottom: '1.5rem'
+                    }}>
+                      {node.content}
+                    </div>
+                  )}
+                  
+                  {/* Widgets display for current node */}
+                  {index === currentNodeIndex && node.widgets && node.widgets.length > 0 && (
+                    <div style={{
+                      marginBottom: '1.5rem',
+                      maxHeight: '40vh',
+                      overflowY: 'auto'
+                    }}>
+                      <div style={{
+                        fontSize: '0.9rem',
+                        fontWeight: '600',
+                        color: 'var(--secondary-color)',
+                        marginBottom: '0.75rem',
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '0.5rem'
+                      }}>
+                        Interactive Elements
+                        {blockedByRequired && !isOwner && (
+                          <FaExclamationTriangle 
+                            style={{ color: 'var(--danger-color)', fontSize: '0.8rem' }} 
+                            title="Complete required widgets to continue"
+                          />
+                        )}
+                      </div>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        {node.widgets.map(widget => (
+                          <WidgetCard
+                            key={widget.id}
+                            widget={widget}
+                            onInteract={interactWithWidget}
+                            onEdit={editWidget}
+                            onDelete={deleteWidget}
+                            isOwner={widget.username === currentUser?.username}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  
+                  {/* Widget Creator for current node */}
+                  {index === currentNodeIndex && (isEditMode || !synthesisExpanded) && (
+                    <div style={{ marginBottom: '1rem' }}>
+                      <WidgetCreator
+                        nodeId={node.id}
+                        onCreateWidget={createWidget}
+                        isAuthor={isOwner}
+                      />
+                    </div>
+                  )}
+                  
+                  {/* Node label under the text */}
+                  <div style={{
+                    fontSize: '0.9rem',
+                    color: 'var(--secondary-color)',
+                    fontWeight: '500',
+                    textAlign: 'left'
+                  }}>
+                    NODE {index + 1} OF {nodes.length}
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       </div>
 
@@ -815,10 +1036,8 @@ function ReadingMode() {
             <div style={{
               position: 'fixed',
               bottom: 0,
-              left: 0,
+              left: '12px',  // Start after timeline
               right: 0,
-              backgroundColor: 'var(--card-background)',
-              borderTop: '1px solid var(--border-color)',
               padding: '1rem',
               zIndex: 20
             }}>
@@ -855,7 +1074,7 @@ function ReadingMode() {
             <div style={{
               position: 'fixed',
               bottom: 0,
-              left: 0,
+              left: '12px',  // Start after timeline
               right: 0,
               height: '50vh',
               backgroundColor: 'var(--card-background)',
@@ -972,153 +1191,279 @@ function ReadingMode() {
         <div style={{
           position: 'fixed',
           bottom: 0,
-          left: 0,
+          left: '12px',  // Start after timeline
           right: 0,
-          height: '100px',
           backgroundColor: 'var(--hover-color)',
           borderTop: '1px solid var(--border-color)',
           padding: '1rem',
-          display: 'grid',
-          gridTemplateColumns: 'repeat(auto-fit, minmax(80px, 1fr))',
-          gap: '0.5rem',
-          alignItems: 'center',
-          zIndex: 20,
-          overflowX: 'auto'
+          zIndex: 20
         }}>
-          <button 
-            onClick={handleSplitNode}
-            disabled={!currentNode || !nodeText.trim()}
-            style={{
-              padding: '0.5rem',
-              backgroundColor: 'var(--accent-color)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              opacity: (!currentNode || !nodeText.trim()) ? 0.5 : 1,
-              minHeight: '40px'
-            }}
-          >
-            Split
-          </button>
-          <button 
-            onClick={handleMergeWithNext}
-            disabled={currentNodeIndex === nodes.length - 1}
-            style={{
-              padding: '0.5rem',
-              backgroundColor: 'var(--success-color)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              opacity: currentNodeIndex === nodes.length - 1 ? 0.5 : 1,
-              minHeight: '40px'
-            }}
-          >
-            Merge
-          </button>
-          <button 
-            onClick={handleDeleteNode}
-            disabled={!currentNode}
-            style={{
-              padding: '0.5rem',
-              backgroundColor: 'var(--danger-color)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              opacity: !currentNode ? 0.5 : 1,
-              minHeight: '40px'
-            }}
-          >
-            Delete
-          </button>
-          <button 
-            onClick={handleMoveUp}
-            disabled={currentNodeIndex === 0}
-            style={{
-              padding: '0.5rem',
-              backgroundColor: 'var(--secondary-color)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              opacity: currentNodeIndex === 0 ? 0.5 : 1,
-              minHeight: '40px'
-            }}
-          >
-            ↑
-          </button>
-          <button 
-            onClick={handleMoveDown}
-            disabled={currentNodeIndex === nodes.length - 1}
-            style={{
-              padding: '0.5rem',
-              backgroundColor: 'var(--secondary-color)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              opacity: currentNodeIndex === nodes.length - 1 ? 0.5 : 1,
-              minHeight: '40px'
-            }}
-          >
-            ↓
-          </button>
-          <button 
-            onClick={handleMoveToFirst}
-            disabled={currentNodeIndex === 0}
-            style={{
-              padding: '0.5rem',
-              backgroundColor: 'var(--secondary-color)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              opacity: currentNodeIndex === 0 ? 0.5 : 1,
-              minHeight: '40px'
-            }}
-          >
-            First
-          </button>
-          <button 
-            onClick={handleMoveToLast}
-            disabled={currentNodeIndex === nodes.length - 1}
-            style={{
-              padding: '0.5rem',
-              backgroundColor: 'var(--secondary-color)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              opacity: currentNodeIndex === nodes.length - 1 ? 0.5 : 1,
-              minHeight: '40px'
-            }}
-          >
-            Last
-          </button>
-          <button 
-            onClick={handleBulkPaste}
-            style={{
-              padding: '0.5rem',
-              backgroundColor: 'var(--accent-color)',
-              color: 'white',
-              border: 'none',
-              borderRadius: '4px',
-              fontSize: '0.8rem',
-              cursor: 'pointer',
-              minHeight: '40px'
-            }}
-          >
-            Paste
-          </button>
+          <div style={{
+            maxWidth: '600px',
+            margin: '0 auto',
+            display: 'grid',
+            gridTemplateColumns: 'repeat(auto-fit, minmax(50px, 1fr))',
+            gap: '0.75rem',
+            alignItems: 'center'
+          }}>
+            <button 
+              onClick={handleSplitNode}
+              disabled={!currentNode || !nodeText.trim()}
+              style={{
+                width: '40px',
+                height: '40px',
+                backgroundColor: 'var(--accent-color)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '1rem',
+                cursor: 'pointer',
+                opacity: (!currentNode || !nodeText.trim()) ? 0.5 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = '#4a8cef';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = 'var(--accent-color)';
+                }
+              }}
+              title="Split node at cursor"
+            >
+              <FaCut />
+            </button>
+            
+            <button 
+              onClick={handleMergeWithNext}
+              disabled={currentNodeIndex === nodes.length - 1}
+              style={{
+                width: '40px',
+                height: '40px',
+                backgroundColor: 'var(--success-color)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '1rem',
+                cursor: 'pointer',
+                opacity: currentNodeIndex === nodes.length - 1 ? 0.5 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = '#45a049';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = 'var(--success-color)';
+                }
+              }}
+              title="Merge with next node"
+            >
+              <FaLink />
+            </button>
+            
+            <button 
+              onClick={handleDeleteNode}
+              disabled={!currentNode}
+              style={{
+                width: '40px',
+                height: '40px',
+                backgroundColor: 'var(--danger-color)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '1rem',
+                cursor: 'pointer',
+                opacity: !currentNode ? 0.5 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = '#ff3333';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = 'var(--danger-color)';
+                }
+              }}
+              title="Delete current node"
+            >
+              <FaTrashAlt />
+            </button>
+            
+            <button 
+              onClick={handleMoveUp}
+              disabled={currentNodeIndex === 0}
+              style={{
+                width: '40px',
+                height: '40px',
+                backgroundColor: 'var(--secondary-color)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '1rem',
+                cursor: 'pointer',
+                opacity: currentNodeIndex === 0 ? 0.5 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = '#777';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = 'var(--secondary-color)';
+                }
+              }}
+              title="Move node up"
+            >
+              <FaArrowUp />
+            </button>
+            
+            <button 
+              onClick={handleMoveDown}
+              disabled={currentNodeIndex === nodes.length - 1}
+              style={{
+                width: '40px',
+                height: '40px',
+                backgroundColor: 'var(--secondary-color)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '1rem',
+                cursor: 'pointer',
+                opacity: currentNodeIndex === nodes.length - 1 ? 0.5 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = '#777';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = 'var(--secondary-color)';
+                }
+              }}
+              title="Move node down"
+            >
+              <FaArrowDown />
+            </button>
+            
+            <button 
+              onClick={handleMoveToFirst}
+              disabled={currentNodeIndex === 0}
+              style={{
+                width: '40px',
+                height: '40px',
+                backgroundColor: 'var(--secondary-color)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '1rem',
+                cursor: 'pointer',
+                opacity: currentNodeIndex === 0 ? 0.5 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = '#777';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = 'var(--secondary-color)';
+                }
+              }}
+              title="Move to first position"
+            >
+              <FaStepBackward />
+            </button>
+            
+            <button 
+              onClick={handleMoveToLast}
+              disabled={currentNodeIndex === nodes.length - 1}
+              style={{
+                width: '40px',
+                height: '40px',
+                backgroundColor: 'var(--secondary-color)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '1rem',
+                cursor: 'pointer',
+                opacity: currentNodeIndex === nodes.length - 1 ? 0.5 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = '#777';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = 'var(--secondary-color)';
+                }
+              }}
+              title="Move to last position"
+            >
+              <FaStepForward />
+            </button>
+            
+            <button 
+              onClick={handleBulkPaste}
+              style={{
+                width: '40px',
+                height: '40px',
+                backgroundColor: 'var(--accent-color)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '1rem',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                e.target.style.backgroundColor = '#4a8cef';
+              }}
+              onMouseLeave={(e) => {
+                e.target.style.backgroundColor = 'var(--accent-color)';
+              }}
+              title="Bulk paste text"
+            >
+              <FaClipboard />
+            </button>
+          </div>
         </div>
       )}
 

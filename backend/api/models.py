@@ -65,7 +65,7 @@ class Synthesis(models.Model):
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
-        unique_together = ['node', 'user']
+        unique_together = ('node', 'user')  # Unique per node-user combination
 
     def __str__(self):
         return f"Synthesis by {self.user.username} for {self.node}"
@@ -120,6 +120,82 @@ class Arc(models.Model):
     def __str__(self):
         return f"Arc: {self.source_node} -> {self.target_node} ({self.arc_type})"
 # UserProfile model
+class Widget(models.Model):
+    WIDGET_TYPE_CHOICES = [
+        ('author_remark', 'Author Remark'),
+        ('author_quiz', 'Author Quiz'),
+        ('author_dialog', 'Author Dialog'),
+        ('reader_llm', 'Reader LLM Response'),
+        ('reader_remark', 'Reader Remark'),
+    ]
+    
+    LLM_PRESET_CHOICES = [
+        ('simplify', 'Simplify this node'),
+        ('analogy', 'Provide analogy'),
+        ('bullets', 'Make bulleted list'),
+        ('summary', 'Summarize'),
+        ('questions', 'Generate questions'),
+    ]
+    
+    node = models.ForeignKey(Node, related_name='widgets', on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    widget_type = models.CharField(max_length=20, choices=WIDGET_TYPE_CHOICES)
+    
+    # Content fields
+    title = models.CharField(max_length=200, blank=True)
+    content = models.TextField()
+    
+    # Quiz-specific fields
+    quiz_question = models.TextField(blank=True)
+    quiz_choices = models.JSONField(default=list, blank=True)  # ['A', 'B', 'C', 'D']
+    quiz_correct_answer = models.CharField(max_length=1, blank=True)
+    quiz_explanation = models.TextField(blank=True)
+    
+    # LLM-specific fields
+    llm_preset = models.CharField(max_length=20, choices=LLM_PRESET_CHOICES, blank=True)
+    llm_custom_prompt = models.TextField(blank=True)
+    
+    # Behavior fields
+    is_required = models.BooleanField(default=False)  # Blocks progression if not completed
+    position = models.PositiveIntegerField(default=0)  # Order within node
+    
+    # Timestamps
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        ordering = ['position', 'created_at']
+    
+    def __str__(self):
+        return f"{self.get_widget_type_display()} by {self.user.username} on {self.node}"
+    
+    @property
+    def is_author_widget(self):
+        return self.widget_type.startswith('author_')
+    
+    @property
+    def is_reader_widget(self):
+        return self.widget_type.startswith('reader_')
+
+class WidgetInteraction(models.Model):
+    """Track user interactions with widgets (completion, answers, etc.)"""
+    widget = models.ForeignKey(Widget, related_name='interactions', on_delete=models.CASCADE)
+    user = models.ForeignKey(User, on_delete=models.CASCADE)
+    
+    # Interaction data
+    completed = models.BooleanField(default=False)
+    quiz_answer = models.CharField(max_length=1, blank=True)  # User's quiz answer
+    interaction_data = models.JSONField(default=dict, blank=True)  # Flexible data storage
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    
+    class Meta:
+        unique_together = ['widget', 'user']
+    
+    def __str__(self):
+        return f"{self.user.username} interaction with {self.widget}"
+
 class UserProfile(models.Model):
     user = models.OneToOneField(User, on_delete=models.CASCADE, related_name='profile')
     bio = models.TextField(blank=True, null=True)

@@ -1,17 +1,4 @@
-/* Hide scrollbar for webkit browsers (Chrome, Safari, Edge) */
-.hide-scrollbar::-webkit-scrollbar {
-  display: none;
-}
-
-.illumination-indicator {
-  font-size: 1rem;
-  opacity: 0.6;
-  transition: opacity 0.2s ease;
-}
-
-.illuminated .illumination-indicator {
-  opacity: 1;
-}/* ReadingMode.css - Complete redesign for improved usability */
+/* ReadingMode.css - Complete redesign for improved usability with polished animations */
 
 :root {
   --primary-color: #e0e0e0;
@@ -25,6 +12,183 @@
   --danger-color: #ff5757;
   --success-color: #4caf50;
   --input-background: #2c2c2c;
+  --card-background: #222222;
+}
+
+/* Smooth transitions for all interactive elements */
+* {
+  transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+/* Enhanced scrollbar hiding */
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+/* Polished animations for reading mode */
+.reading-mode-container {
+  animation: fadeInUp 0.4s ease-out;
+}
+
+@keyframes fadeInUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Enhanced node transition animations */
+.node-card {
+  transition: all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+.node-card:hover {
+  transform: scale(1.02);
+}
+
+/* Smooth timeline interactions */
+.timeline-container {
+  transition: all 0.3s ease;
+}
+
+.timeline-node {
+  transition: all 0.25s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+.timeline-node:hover {
+  transform: scaleY(1.1);
+  filter: brightness(1.2);
+}
+
+/* Enhanced button animations */
+.icon-button {
+  transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+  transform: scale(1);
+}
+
+.icon-button:hover {
+  transform: scale(1.1);
+  filter: brightness(1.1);
+}
+
+.icon-button:active {
+  transform: scale(0.95);
+}
+
+/* Edit mode button animations */
+.edit-mode-button {
+  transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+  transform: scale(1);
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.edit-mode-button:hover:not(:disabled) {
+  transform: scale(1.05);
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.edit-mode-button:active:not(:disabled) {
+  transform: scale(0.98);
+}
+
+.edit-mode-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* Toast animations */
+.toast-notification {
+  animation: slideInUp 0.3s ease-out;
+}
+
+@keyframes slideInUp {
+  from {
+    opacity: 0;
+    transform: translate(-50%, 20px);
+  }
+  to {
+    opacity: 1;
+    transform: translate(-50%, 0);
+  }
+}
+
+/* Modal animations */
+.modal-overlay {
+  animation: fadeIn 0.2s ease-out;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-content {
+  animation: scaleIn 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+@keyframes scaleIn {
+  from {
+    opacity: 0;
+    transform: scale(0.9);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+
+/* Synthesis bar animations */
+.synthesis-bar {
+  transition: all 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+.synthesis-expanded {
+  animation: expandUp 0.3s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+@keyframes expandUp {
+  from {
+    height: 0;
+    opacity: 0;
+  }
+  to {
+    height: 50vh;
+    opacity: 1;
+  }
+}
+
+/* Enhanced input and textarea animations */
+input, textarea {
+  transition: all 0.2s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+input:focus, textarea:focus {
+  transform: scale(1.01);
+  box-shadow: 0 0 0 2px rgba(95, 158, 255, 0.3);
+}
+
+/* Loading states with pulse animation */
+.loading-state {
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
 }
 
 .reading-mode-container {

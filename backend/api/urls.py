@@ -24,6 +24,7 @@ router.register(r'syntheses', views.SynthesisViewSet, basename='synthesis')
 router.register(r'preset-responses', views.PresetResponseViewSet, basename='presetresponse')
 router.register(r'arcs', views.ArcViewSet, basename='arc')
 router.register(r'profiles', views.UserProfileViewSet, basename='profile')
+router.register(r'widgets', views.WidgetViewSet, basename='widget')
 
 # Append router URLs to the urlpatterns
 urlpatterns += router.urls

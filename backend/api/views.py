@@ -3,11 +3,11 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, action
 from rest_framework.response import Response
 from .models import Cognition, Node, Synthesis, PresetResponse, SynthesisPresetLink, Arc
-from .models import UserProfile
+from .models import UserProfile, Widget, WidgetInteraction
 from .serializers import (
     CognitionSerializer, CognitionDetailSerializer, 
     NodeSerializer, SynthesisSerializer, PresetResponseSerializer,
-    ArcSerializer
+    ArcSerializer, WidgetSerializer, WidgetInteractionSerializer
 )
 from .serializers import UserProfileSerializer, CognitionCollectiveSerializer
 from django.utils import timezone
@@ -475,14 +475,19 @@ class NodeViewSet(viewsets.ModelViewSet):
             position_to_delete = instance.position
             cognition = instance.cognition
             
+            # Get nodes that need to be shifted down
+            nodes_to_shift = Node.objects.filter(
+                cognition=cognition,
+                position__gt=position_to_delete
+            ).order_by('position')
+            
             # Delete the node
             instance.delete()
             
-            # Shift subsequent nodes down
-            Node.objects.filter(
-                cognition=cognition,
-                position__gt=position_to_delete
-            ).update(position=models.F('position') - 1)
+            # Shift subsequent nodes down manually
+            for shift_node in nodes_to_shift:
+                shift_node.position = shift_node.position - 1
+                shift_node.save()
         
         return Response({'status': 'deleted'}, status=status.HTTP_204_NO_CONTENT)
     
@@ -666,14 +671,20 @@ class NodeViewSet(viewsets.ModelViewSet):
             node.character_count = len(merged_content)
             node.save()
             
-            # Delete next node
+            # Get nodes that need to be shifted down
+            next_node_position = next_node.position
+            nodes_to_shift = Node.objects.filter(
+                cognition=node.cognition,
+                position__gt=next_node_position
+            ).order_by('position')
+            
+            # Delete the next node
             next_node.delete()
             
-            # Shift all subsequent nodes' positions down by 1
-            Node.objects.filter(
-                cognition=node.cognition,
-                position__gt=next_node.position
-            ).update(position=models.F('position') - 1)
+            # Shift subsequent nodes down manually
+            for shift_node in nodes_to_shift:
+                shift_node.position = shift_node.position - 1
+                shift_node.save()
         
         return Response({
             'status': 'success',
@@ -682,47 +693,53 @@ class NodeViewSet(viewsets.ModelViewSet):
     
     @action(detail=True, methods=['post'])
     def reorder_position(self, request, pk=None):
-        """Move a node to a new position atomically"""
+        """Move a node to a new position atomically, avoiding unique constraint conflicts"""
         node = self.get_object()
         if node.cognition.user != request.user:
-            return Response({'error': 'You do not have permission to edit this node'}, 
-                          status=status.HTTP_403_FORBIDDEN)
-        
+            return Response({'error': 'You do not have permission to edit this node'},
+                            status=status.HTTP_403_FORBIDDEN)
+
         new_position = request.data.get('new_position')
         if new_position is None:
-            return Response({'error': 'new_position is required'}, 
-                          status=status.HTTP_400_BAD_REQUEST)
-        
-        max_position = node.cognition.nodes.count() - 1
-        if new_position < 0 or new_position > max_position:
-            return Response({'error': 'Invalid position'}, 
-                          status=status.HTTP_400_BAD_REQUEST)
-        
-        if new_position == node.position:
+            return Response({'error': 'new_position is required'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        # Determine valid range
+        agg = node.cognition.nodes.aggregate(models.Max('position'))
+        max_pos = agg.get('position__max', 0) or 0
+        if new_position < 0 or new_position > max_pos:
+            return Response({'error': 'Invalid position'},
+                            status=status.HTTP_400_BAD_REQUEST)
+
+        old_position = node.position
+        if new_position == old_position:
             return Response({'status': 'no_change'})
-        
+
         with transaction.atomic():
-            old_position = node.position
+            # Get all nodes for this cognition in position order
+            all_nodes = list(node.cognition.nodes.order_by('position'))
             
-            if new_position < old_position:
-                # Moving up - shift nodes down
-                Node.objects.filter(
-                    cognition=node.cognition,
-                    position__gte=new_position,
-                    position__lt=old_position
-                ).update(position=models.F('position') + 1)
-            else:
-                # Moving down - shift nodes up
-                Node.objects.filter(
-                    cognition=node.cognition,
-                    position__gt=old_position,
-                    position__lte=new_position
-                ).update(position=models.F('position') - 1)
+            # Find the moving node in the list and remove it
+            moving_node = None
+            for i, n in enumerate(all_nodes):
+                if n.id == node.id:
+                    moving_node = all_nodes.pop(i)
+                    break
             
-            # Update node position
-            node.position = new_position
-            node.save()
-        
+            # Insert the moving node at the new position
+            all_nodes.insert(new_position, moving_node)
+            
+            # First, move all nodes to negative positions to avoid conflicts
+            for i, update_node in enumerate(all_nodes):
+                temp_position = -(i + 1000)  # Use large negative numbers
+                update_node.position = temp_position
+                update_node.save()
+            
+            # Then assign final sequential positions
+            for i, update_node in enumerate(all_nodes):
+                update_node.position = i
+                update_node.save()
+
         return Response({
             'status': 'success',
             'node': NodeSerializer(node).data,
@@ -870,6 +887,120 @@ class ArcViewSet(viewsets.ModelViewSet):
     queryset = Arc.objects.all()
     serializer_class = ArcSerializer
     permission_classes = [IsAuthenticated]
+
+class WidgetViewSet(viewsets.ModelViewSet):
+    serializer_class = WidgetSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        user = self.request.user
+        # Users can see:
+        # 1. Author widgets on nodes they can access
+        # 2. Their own reader widgets
+        return Widget.objects.filter(
+            models.Q(node__cognition__user=user) | 
+            models.Q(node__cognition__is_public=True) |
+            models.Q(user=user)
+        ).distinct()
+    
+    def perform_create(self, serializer):
+        # Auto-set user and validate permissions
+        node = serializer.validated_data['node']
+        widget_type = serializer.validated_data['widget_type']
+        
+        # Check permissions
+        if widget_type.startswith('author_'):
+            if node.cognition.user != self.request.user:
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("Only the author can create author widgets")
+        
+        if not (node.cognition.user == self.request.user or node.cognition.is_public):
+            from rest_framework.exceptions import PermissionDenied
+            raise PermissionDenied("Cannot create widgets on inaccessible nodes")
+        
+        serializer.save(user=self.request.user)
+    
+    @action(detail=True, methods=['post'])
+    def interact(self, request, pk=None):
+        """Record user interaction with widget"""
+        widget = self.get_object()
+        
+        # Create or update interaction
+        interaction, created = WidgetInteraction.objects.update_or_create(
+            widget=widget,
+            user=request.user,
+            defaults={
+                'completed': request.data.get('completed', False),
+                'quiz_answer': request.data.get('quiz_answer', ''),
+                'interaction_data': request.data.get('interaction_data', {})
+            }
+        )
+        
+        return Response(WidgetInteractionSerializer(interaction).data)
+    
+    @action(detail=False, methods=['post'])
+    def create_llm_widget(self, request):
+        """Create LLM widget with API call to generate content"""
+        node_id = request.data.get('node_id')
+        llm_preset = request.data.get('llm_preset')
+        custom_prompt = request.data.get('custom_prompt', '')
+        
+        try:
+            node = Node.objects.get(id=node_id)
+            if not (node.cognition.user == request.user or node.cognition.is_public):
+                return Response({'error': 'No permission'}, status=403)
+            
+            # Generate LLM content based on preset
+            content = self._generate_llm_content(node.content, llm_preset, custom_prompt)
+            
+            # Create widget
+            widget = Widget.objects.create(
+                node=node,
+                user=request.user,
+                widget_type='reader_llm',
+                llm_preset=llm_preset,
+                llm_custom_prompt=custom_prompt,
+                content=content,
+                position=node.widgets.filter(user=request.user).count()
+            )
+            
+            return Response(WidgetSerializer(widget, context={'request': request}).data)
+            
+        except Node.DoesNotExist:
+            return Response({'error': 'Node not found'}, status=404)
+    
+    def _generate_llm_content(self, node_content, preset, custom_prompt=''):
+        """Generate LLM content based on preset and node content"""
+        # Check if OpenAI API key is available
+        openai_api_key = os.getenv('OPENAI_API_KEY')
+        if not openai_api_key:
+            return f"LLM service unavailable - {preset} preset for: {node_content[:50]}..."
+        
+        openai.api_key = openai_api_key
+        
+        prompts = {
+            'simplify': f"Simplify this text in plain language:\n\n{node_content}",
+            'analogy': f"Provide a helpful analogy for this concept:\n\n{node_content}",
+            'bullets': f"Convert this into a bulleted list:\n\n{node_content}",
+            'summary': f"Summarize this text concisely:\n\n{node_content}",
+            'questions': f"Generate 2-3 questions about this text:\n\n{node_content}"
+        }
+        
+        prompt = custom_prompt if custom_prompt else prompts.get(preset, node_content)
+        
+        try:
+            response = openai.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": "You are a helpful assistant that helps readers understand content better."},
+                    {"role": "user", "content": prompt}
+                ],
+                max_tokens=300,
+                temperature=0.4,
+            )
+            return response.choices[0].message.content.strip()
+        except Exception as e:
+            return f"Error generating content: {str(e)}"
 @api_view(['POST'])
 @csrf_exempt
 @permission_classes([AllowAny])
