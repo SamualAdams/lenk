@@ -33,13 +33,7 @@ class Node(models.Model):
     def __str__(self):
         return f"{self.cognition.title} - Node {self.position}"
     
-    @property
-    def author_synthesis(self):
-        """
-        Returns the synthesis for this node created by the author of the parent cognition.
-        This property fetches the synthesis instance where the user matches the cognition's user.
-        """
-        return self.syntheses.filter(user=self.cognition.user).first()
+    # author_synthesis property removed - synthesis functionality replaced by widget system
 
 class PresetResponse(models.Model):
     """Reusable preset responses that can be applied to any node."""
@@ -52,49 +46,8 @@ class PresetResponse(models.Model):
     def __str__(self):
         return self.title
 
-class Synthesis(models.Model):
-    """
-    Each node can have multiple syntheses—one per user.
-    This model represents a synthesis written by a user for a specific node.
-    """
-    node = models.ForeignKey(Node, related_name='syntheses', on_delete=models.CASCADE)
-    user = models.ForeignKey(User, related_name='syntheses', on_delete=models.CASCADE)
-    content = models.TextField(blank=True)
-    preset_responses = models.ManyToManyField(PresetResponse, through='SynthesisPresetLink', blank=True)
-    created_at = models.DateTimeField(auto_now_add=True)
-    updated_at = models.DateTimeField(auto_now=True)
-
-    class Meta:
-        unique_together = ('node', 'user')  # Unique per node-user combination
-
-    def __str__(self):
-        return f"Synthesis by {self.user.username} for {self.node}"
-
-    @property
-    def full_content(self):
-        """Returns combined content of custom text and preset responses."""
-        full_text = self.content
-        links = self.preset_links.all().order_by('position')
-        if links:
-            if full_text:
-                full_text += "\n\n"
-            preset_texts = [link.preset_response.content for link in links]
-            full_text += "\n\n".join(preset_texts)
-        return full_text
-
-class SynthesisPresetLink(models.Model):
-    """Junction table to track which preset responses are used in a synthesis with ordering."""
-    synthesis = models.ForeignKey(Synthesis, related_name='preset_links', on_delete=models.CASCADE)
-    preset_response = models.ForeignKey(PresetResponse, on_delete=models.CASCADE)
-    position = models.PositiveIntegerField(default=0)
-    created_at = models.DateTimeField(auto_now_add=True)
-    
-    class Meta:
-        ordering = ['position']
-        unique_together = ['synthesis', 'preset_response']
-    
-    def __str__(self):
-        return f"{self.synthesis} - {self.preset_response}"
+# Synthesis and SynthesisPresetLink models removed - functionality consolidated into widget system
+# These models were used for user notes/responses on nodes, now handled by reader_remark widgets
 
 class Arc(models.Model):
     TYPE_CHOICES = [
@@ -125,16 +78,27 @@ class Widget(models.Model):
         ('author_remark', 'Author Remark'),
         ('author_quiz', 'Author Quiz'),
         ('author_dialog', 'Author Dialog'),
-        ('reader_llm', 'Reader LLM Response'),
+        ('author_llm', 'Author AI Response'),
+        ('reader_llm', 'Reader AI Response'),
         ('reader_remark', 'Reader Remark'),
     ]
     
     LLM_PRESET_CHOICES = [
+        # Reader presets
         ('simplify', 'Simplify this node'),
         ('analogy', 'Provide analogy'),
         ('bullets', 'Make bulleted list'),
         ('summary', 'Summarize'),
         ('questions', 'Generate questions'),
+        
+        # Author presets
+        ('explain', 'Provide detailed explanation'),
+        ('examples', 'Give practical examples'),
+        ('context', 'Add background context'),
+        ('connections', 'Show concept relationships'),
+        ('deeper_dive', 'Expand with advanced details'),
+        ('clarify', 'Clarify potential confusion'),
+        ('applications', 'Show real-world applications'),
     ]
     
     node = models.ForeignKey(Node, related_name='widgets', on_delete=models.CASCADE)
@@ -143,7 +107,7 @@ class Widget(models.Model):
     
     # Content fields
     title = models.CharField(max_length=200, blank=True)
-    content = models.TextField()
+    content = models.TextField(blank=True)  # Allow blank for quiz widgets and others with specific fields
     
     # Quiz-specific fields
     quiz_question = models.TextField(blank=True)
@@ -168,6 +132,21 @@ class Widget(models.Model):
     
     def __str__(self):
         return f"{self.get_widget_type_display()} by {self.user.username} on {self.node}"
+    
+    def clean(self):
+        """Custom validation for different widget types"""
+        from django.core.exceptions import ValidationError
+        
+        if self.widget_type in ['author_quiz', 'reader_quiz']:
+            if not self.quiz_question or not self.quiz_question.strip():
+                raise ValidationError('Quiz question is required for quiz widgets')
+        elif self.widget_type in ['author_remark', 'reader_remark']:
+            if (not self.content or not self.content.strip()) and (not self.title or not self.title.strip()):
+                raise ValidationError('Content or title is required for remark widgets')
+        elif self.widget_type == 'author_dialog':
+            if not self.content or not self.content.strip():
+                raise ValidationError('Content is required for dialog widgets')
+        # author_llm and reader_llm widgets get their content generated, so no validation needed
     
     @property
     def is_author_widget(self):

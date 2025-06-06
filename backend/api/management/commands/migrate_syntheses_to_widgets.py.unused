@@ -1,0 +1,112 @@
+from django.core.management.base import BaseCommand
+from django.db import transaction, models
+from api.models import Synthesis, Widget
+import logging
+
+logger = logging.getLogger(__name__)
+
+class Command(BaseCommand):
+    help = 'Migrate existing Synthesis objects to Widget objects'
+    
+    def add_arguments(self, parser):
+        parser.add_argument(
+            '--dry-run',
+            action='store_true',
+            help='Show what would be migrated without actually doing it',
+        )
+        parser.add_argument(
+            '--delete-syntheses',
+            action='store_true',
+            help='Delete syntheses after successful migration',
+        )
+    
+    def handle(self, *args, **options):
+        dry_run = options['dry_run']
+        delete_syntheses = options['delete_syntheses']
+        
+        syntheses = Synthesis.objects.all().select_related('node', 'user')
+        total_syntheses = syntheses.count()
+        
+        if total_syntheses == 0:
+            self.stdout.write(
+                self.style.SUCCESS('No syntheses found to migrate.')
+            )
+            return
+        
+        self.stdout.write(f'Found {total_syntheses} syntheses to migrate.')
+        
+        if dry_run:
+            self.stdout.write(self.style.WARNING('DRY RUN - No changes will be made'))
+            for synthesis in syntheses:
+                self.stdout.write(
+                    f'Would migrate: Synthesis {synthesis.id} by {synthesis.user.username} '
+                    f'on node {synthesis.node.id} (content length: {len(synthesis.full_content)})'
+                )
+            return
+        
+        migrated_count = 0
+        skipped_count = 0
+        
+        with transaction.atomic():
+            for synthesis in syntheses:
+                try:
+                    # Check if a reader_remark widget already exists for this user/node
+                    existing_widget = Widget.objects.filter(
+                        node=synthesis.node,
+                        user=synthesis.user,
+                        widget_type='reader_remark'
+                    ).first()
+                    
+                    if existing_widget:
+                        self.stdout.write(
+                            self.style.WARNING(
+                                f'Skipping synthesis {synthesis.id} - widget already exists'
+                            )
+                        )
+                        skipped_count += 1
+                        continue
+                    
+                    # Get the highest position for this node/user combination
+                    max_position = Widget.objects.filter(
+                        node=synthesis.node,
+                        user=synthesis.user
+                    ).aggregate(max_pos=models.Max('position'))['max_pos'] or -1
+                    
+                    # Create the widget
+                    widget = Widget.objects.create(
+                        node=synthesis.node,
+                        user=synthesis.user,
+                        widget_type='reader_remark',
+                        title='Migrated Note',
+                        content=synthesis.full_content,
+                        position=max_position + 1
+                    )
+                    
+                    migrated_count += 1
+                    self.stdout.write(
+                        f'Migrated synthesis {synthesis.id} → widget {widget.id}'
+                    )
+                    
+                except Exception as e:
+                    self.stdout.write(
+                        self.style.ERROR(
+                            f'Error migrating synthesis {synthesis.id}: {str(e)}'
+                        )
+                    )
+                    raise
+        
+        self.stdout.write(
+            self.style.SUCCESS(
+                f'Successfully migrated {migrated_count} syntheses to widgets. '
+                f'Skipped {skipped_count} due to existing widgets.'
+            )
+        )
+        
+        if delete_syntheses and migrated_count > 0:
+            with transaction.atomic():
+                deleted_count = Synthesis.objects.all().delete()[0]
+                self.stdout.write(
+                    self.style.SUCCESS(
+                        f'Deleted {deleted_count} synthesis objects.'
+                    )
+                )

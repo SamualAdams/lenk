@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { FaEdit, FaTrash, FaCheck, FaTimes, FaLightbulb, FaCommentDots, FaStickyNote } from 'react-icons/fa';
+import MarkdownRenderer from '../MarkdownRenderer';
 
 const WidgetCard = ({ widget, onInteract, onEdit, onDelete, isOwner }) => {
   const [userAnswer, setUserAnswer] = useState('');
@@ -25,15 +26,17 @@ const WidgetCard = ({ widget, onInteract, onEdit, onDelete, isOwner }) => {
   const getWidgetIcon = () => {
     switch (widget.widget_type) {
       case 'author_remark':
-        return <FaStickyNote className="text-blue-600" />;
+        return <FaStickyNote className="text-blue-400" />;
       case 'author_quiz':
-        return <FaCommentDots className="text-green-600" />;
+        return <FaCommentDots className="text-green-400" />;
       case 'author_dialog':
-        return <FaCommentDots className="text-purple-600" />;
+        return <FaCommentDots className="text-purple-400" />;
+      case 'author_llm':
+        return <FaLightbulb className="text-indigo-400" />;
       case 'reader_llm':
-        return <FaLightbulb className="text-orange-600" />;
+        return <FaLightbulb className="text-orange-400" />;
       case 'reader_remark':
-        return <FaStickyNote className="text-yellow-600" />;
+        return <FaStickyNote className="text-yellow-400" />;
       default:
         return <FaStickyNote />;
     }
@@ -43,27 +46,27 @@ const WidgetCard = ({ widget, onInteract, onEdit, onDelete, isOwner }) => {
     switch (widget.widget_type) {
       case 'author_remark':
         return (
-          <div className="bg-blue-50 border-l-4 border-blue-400 p-3 rounded">
-            <div className="flex items-center gap-2 text-xs text-blue-600 font-medium mb-1">
+          <div className="bg-gray-800 border-l-4 border-blue-400 p-3 rounded">
+            <div className="flex items-center gap-2 text-xs text-blue-400 font-medium mb-1">
               {getWidgetIcon()}
               <span>Author:</span>
             </div>
-            <div className="text-gray-800">{widget.content}</div>
+            <MarkdownRenderer content={widget.content} className="text-gray-200" />
           </div>
         );
 
       case 'author_quiz':
         return (
-          <div className="bg-green-50 border border-green-200 p-3 rounded">
-            <div className="flex items-center gap-2 text-xs text-green-600 font-medium mb-2">
+          <div className="bg-gray-800 border border-green-500 p-3 rounded">
+            <div className="flex items-center gap-2 text-xs text-green-400 font-medium mb-2">
               {getWidgetIcon()}
               <span>Author: Quiz</span>
             </div>
-            <div className="font-medium mb-2">{widget.quiz_question}</div>
+            <div className="font-medium mb-2 text-gray-200">{widget.quiz_question}</div>
             {!completed ? (
               <div>
                 {widget.quiz_choices.map((choice, index) => (
-                  <label key={index} className="block mb-1 cursor-pointer">
+                  <label key={index} className="block mb-1 cursor-pointer text-gray-300">
                     <input
                       type="radio"
                       name={`quiz_${widget.id}`}
@@ -83,13 +86,13 @@ const WidgetCard = ({ widget, onInteract, onEdit, onDelete, isOwner }) => {
                 </button>
               </div>
             ) : (
-              <div className="text-green-700">
+              <div className="text-green-400">
                 <div className="flex items-center gap-1 mb-1">
-                  <FaCheck className="text-green-600" />
+                  <FaCheck className="text-green-500" />
                   <span className="font-medium">Completed</span>
                 </div>
                 {widget.quiz_explanation && (
-                  <div className="mt-1 text-sm bg-green-100 p-2 rounded">
+                  <div className="mt-1 text-sm bg-gray-700 p-2 rounded text-gray-200">
                     <strong>Explanation:</strong> {widget.quiz_explanation}
                   </div>
                 )}
@@ -100,12 +103,12 @@ const WidgetCard = ({ widget, onInteract, onEdit, onDelete, isOwner }) => {
 
       case 'author_dialog':
         return (
-          <div className="bg-purple-50 border border-purple-200 p-3 rounded">
-            <div className="flex items-center gap-2 text-xs text-purple-600 font-medium mb-1">
+          <div className="bg-gray-800 border border-purple-500 p-3 rounded">
+            <div className="flex items-center gap-2 text-xs text-purple-400 font-medium mb-1">
               {getWidgetIcon()}
               <span>Author: Discussion</span>
             </div>
-            <div className="text-gray-800 mb-2">{widget.content}</div>
+            <MarkdownRenderer content={widget.content} className="text-gray-200 mb-2" />
             {!completed && (
               <button
                 onClick={handleMarkComplete}
@@ -115,40 +118,51 @@ const WidgetCard = ({ widget, onInteract, onEdit, onDelete, isOwner }) => {
               </button>
             )}
             {completed && (
-              <div className="flex items-center gap-1 text-purple-700">
-                <FaCheck className="text-purple-600" />
+              <div className="flex items-center gap-1 text-purple-400">
+                <FaCheck className="text-purple-500" />
                 <span className="text-sm font-medium">Read</span>
               </div>
             )}
           </div>
         );
 
+      case 'author_llm':
+        return (
+          <div className="bg-gray-800 border border-indigo-500 p-3 rounded">
+            <div className="flex items-center gap-2 text-xs text-indigo-400 font-medium mb-1">
+              {getWidgetIcon()}
+              <span>Author: {widget.llm_preset ? widget.llm_preset.charAt(0).toUpperCase() + widget.llm_preset.slice(1).replace('_', ' ') : 'AI Assistant'}</span>
+            </div>
+            <MarkdownRenderer content={widget.content} className="text-gray-200" />
+          </div>
+        );
+
       case 'reader_llm':
         return (
-          <div className="bg-orange-50 border border-orange-200 p-3 rounded">
-            <div className="flex items-center gap-2 text-xs text-orange-600 font-medium mb-1">
+          <div className="bg-gray-800 border border-orange-500 p-3 rounded">
+            <div className="flex items-center gap-2 text-xs text-orange-400 font-medium mb-1">
               {getWidgetIcon()}
               <span>Reader: {widget.llm_preset ? widget.llm_preset.charAt(0).toUpperCase() + widget.llm_preset.slice(1) : 'Custom'}</span>
             </div>
-            <div className="text-gray-800">{widget.content}</div>
+            <MarkdownRenderer content={widget.content} className="text-gray-200" />
           </div>
         );
 
       case 'reader_remark':
         return (
-          <div className="bg-yellow-50 border border-yellow-200 p-3 rounded">
-            <div className="flex items-center gap-2 text-xs text-yellow-600 font-medium mb-1">
+          <div className="bg-gray-800 border border-yellow-500 p-3 rounded">
+            <div className="flex items-center gap-2 text-xs text-yellow-400 font-medium mb-1">
               {getWidgetIcon()}
               <span>Reader: Note</span>
             </div>
-            <div className="text-gray-800">{widget.content}</div>
+            <MarkdownRenderer content={widget.content} className="text-gray-200" />
           </div>
         );
 
       default:
         return (
-          <div className="bg-gray-50 border border-gray-200 p-3 rounded">
-            <div className="text-gray-800">{widget.content}</div>
+          <div className="bg-gray-800 border border-gray-600 p-3 rounded">
+            <MarkdownRenderer content={widget.content} className="text-gray-200" />
           </div>
         );
     }

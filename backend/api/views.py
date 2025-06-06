@@ -2,13 +2,14 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, action
 from rest_framework.response import Response
-from .models import Cognition, Node, Synthesis, PresetResponse, SynthesisPresetLink, Arc
+from .models import Cognition, Node, PresetResponse, Arc
 from .models import UserProfile, Widget, WidgetInteraction
 from .serializers import (
     CognitionSerializer, CognitionDetailSerializer, 
-    NodeSerializer, SynthesisSerializer, PresetResponseSerializer,
+    NodeSerializer, PresetResponseSerializer,
     ArcSerializer, WidgetSerializer, WidgetInteractionSerializer
 )
+# SynthesisSerializer removed - functionality consolidated into widgets
 from .serializers import UserProfileSerializer, CognitionCollectiveSerializer
 from django.utils import timezone
 from rest_framework import filters
@@ -747,122 +748,7 @@ class NodeViewSet(viewsets.ModelViewSet):
             'new_position': new_position
         })
 
-class SynthesisViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for managing Synthesis objects.
-    Only returns syntheses for nodes that the user can access (their own or public),
-    and only if the synthesis is by the user or by the cognition author.
-    """
-    serializer_class = SynthesisSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        """
-        Return syntheses for nodes the user can access (public or their own).
-        Only include syntheses by user or the cognition author.
-        """
-        user = self.request.user
-        return Synthesis.objects.filter(
-            models.Q(node__cognition__user=user) | models.Q(node__cognition__is_public=True),
-        ).filter(
-            models.Q(user=user) | models.Q(user=models.F('node__cognition__user'))
-        )
-
-    @action(detail=False, methods=['post'])
-    def add_or_update(self, request):
-        """
-        Add or update the current user's synthesis for a given node.
-        Only one synthesis per (user, node) is allowed.
-        Returns the updated synthesis if successful.
-        """
-        node_id = request.data.get('node_id')
-        content = request.data.get('content')
-        if not node_id:
-            return Response({'error': 'node_id is required'}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            node = Node.objects.get(id=node_id)
-            # Permission: Only allow access if user is the cognition owner or the cognition is public
-            if node.cognition.user != request.user and not node.cognition.is_public:
-                return Response({'error': 'You do not have permission to access this node'}, status=status.HTTP_403_FORBIDDEN)
-            # Enforce one synthesis per user/node
-            synthesis, created = Synthesis.objects.update_or_create(
-                node=node,
-                user=request.user,
-                defaults={'content': content or ''}
-            )
-            serializer = SynthesisSerializer(synthesis, context={'request': request})
-            return Response(serializer.data)
-        except Node.DoesNotExist:
-            return Response({'error': 'Node not found'}, status=status.HTTP_404_NOT_FOUND)
-
-    @action(detail=True, methods=['post'])
-    def add_preset(self, request, pk=None):
-        """Add a preset response to a synthesis"""
-        synthesis = self.get_object()
-        preset_id = request.data.get('preset_id')
-        position = request.data.get('position', 
-                                   synthesis.preset_links.count())  # Default to end
-
-        if not preset_id:
-            return Response(
-                {'error': 'preset_id is required'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            preset = PresetResponse.objects.get(id=preset_id)
-            link, created = SynthesisPresetLink.objects.get_or_create(
-                synthesis=synthesis,
-                preset_response=preset,
-                defaults={'position': position}
-            )
-
-            if not created:
-                link.position = position
-                link.save()
-
-            # Fix positions of other links if needed
-            self._reorder_preset_links(synthesis)
-
-            return Response(SynthesisSerializer(synthesis).data)
-        except PresetResponse.DoesNotExist:
-            return Response(
-                {'error': 'Preset response not found'}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-    @action(detail=True, methods=['post'])
-    def remove_preset(self, request, pk=None):
-        """Remove a preset response from a synthesis"""
-        synthesis = self.get_object()
-        preset_id = request.data.get('preset_id')
-
-        if not preset_id:
-            return Response(
-                {'error': 'preset_id is required'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            link = synthesis.preset_links.get(preset_response_id=preset_id)
-            link.delete()
-
-            # Fix positions of other links
-            self._reorder_preset_links(synthesis)
-
-            return Response(SynthesisSerializer(synthesis).data)
-        except SynthesisPresetLink.DoesNotExist:
-            return Response(
-                {'error': 'Preset not found in this synthesis'}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-    def _reorder_preset_links(self, synthesis):
-        """Helper to ensure preset links have sequential positions"""
-        for i, link in enumerate(synthesis.preset_links.all().order_by('position')):
-            if link.position != i:
-                link.position = i
-                link.save()
+# SynthesisViewSet removed - functionality consolidated into widget system
 
 class PresetResponseViewSet(viewsets.ModelViewSet):
     queryset = PresetResponse.objects.all().order_by('category', 'title')
@@ -908,15 +794,17 @@ class WidgetViewSet(viewsets.ModelViewSet):
         node = serializer.validated_data['node']
         widget_type = serializer.validated_data['widget_type']
         
-        # Check permissions
+        # Check permissions for author widgets
         if widget_type.startswith('author_'):
             if node.cognition.user != self.request.user:
                 from rest_framework.exceptions import PermissionDenied
                 raise PermissionDenied("Only the author can create author widgets")
         
-        if not (node.cognition.user == self.request.user or node.cognition.is_public):
-            from rest_framework.exceptions import PermissionDenied
-            raise PermissionDenied("Cannot create widgets on inaccessible nodes")
+        # Check permissions for reader widgets
+        if widget_type.startswith('reader_'):
+            if not (node.cognition.user == self.request.user or node.cognition.is_public):
+                from rest_framework.exceptions import PermissionDenied
+                raise PermissionDenied("Cannot create reader widgets on inaccessible nodes")
         
         serializer.save(user=self.request.user)
     
@@ -940,24 +828,31 @@ class WidgetViewSet(viewsets.ModelViewSet):
     
     @action(detail=False, methods=['post'])
     def create_llm_widget(self, request):
-        """Create LLM widget with API call to generate content"""
+        """Create LLM widget with API call to generate content - supports both author and reader"""
         node_id = request.data.get('node_id')
         llm_preset = request.data.get('llm_preset')
         custom_prompt = request.data.get('custom_prompt', '')
+        widget_type = request.data.get('widget_type', 'reader_llm')  # Default to reader_llm for backward compatibility
         
         try:
             node = Node.objects.get(id=node_id)
-            if not (node.cognition.user == request.user or node.cognition.is_public):
-                return Response({'error': 'No permission'}, status=403)
             
-            # Generate LLM content based on preset
-            content = self._generate_llm_content(node.content, llm_preset, custom_prompt)
+            # Enhanced permission check
+            if widget_type == 'author_llm':
+                if node.cognition.user != request.user:
+                    return Response({'error': 'Only author can create author LLM widgets'}, status=403)
+            else:  # reader_llm
+                if not (node.cognition.user == request.user or node.cognition.is_public):
+                    return Response({'error': 'No permission to create reader LLM widgets'}, status=403)
+            
+            # Generate LLM content with widget type context
+            content = self._generate_llm_content(node.content, llm_preset, custom_prompt, widget_type)
             
             # Create widget
             widget = Widget.objects.create(
                 node=node,
                 user=request.user,
-                widget_type='reader_llm',
+                widget_type=widget_type,
                 llm_preset=llm_preset,
                 llm_custom_prompt=custom_prompt,
                 content=content,
@@ -969,8 +864,8 @@ class WidgetViewSet(viewsets.ModelViewSet):
         except Node.DoesNotExist:
             return Response({'error': 'Node not found'}, status=404)
     
-    def _generate_llm_content(self, node_content, preset, custom_prompt=''):
-        """Generate LLM content based on preset and node content"""
+    def _generate_llm_content(self, node_content, preset, custom_prompt='', widget_type='reader_llm'):
+        """Generate LLM content based on preset, node content, and widget type"""
         # Check if OpenAI API key is available
         openai_api_key = os.getenv('OPENAI_API_KEY')
         if not openai_api_key:
@@ -978,21 +873,49 @@ class WidgetViewSet(viewsets.ModelViewSet):
         
         openai.api_key = openai_api_key
         
-        prompts = {
-            'simplify': f"Simplify this text in plain language:\n\n{node_content}",
-            'analogy': f"Provide a helpful analogy for this concept:\n\n{node_content}",
-            'bullets': f"Convert this into a bulleted list:\n\n{node_content}",
-            'summary': f"Summarize this text concisely:\n\n{node_content}",
-            'questions': f"Generate 2-3 questions about this text:\n\n{node_content}"
+        # Author-specific prompts
+        author_prompts = {
+            'explain': f"As the author, provide a detailed explanation to help readers understand this concept better. Use markdown formatting (headers, bullet points, **bold**, *italic*) to structure your response clearly:\n\n{node_content}",
+            'examples': f"As the author, provide 2-3 concrete examples that illustrate this concept. Use markdown formatting with numbered lists or bullet points:\n\n{node_content}",
+            'context': f"As the author, provide important background context that readers need to understand this. Use markdown headers and formatting to organize the information:\n\n{node_content}",
+            'connections': f"As the author, explain how this concept connects to related ideas or principles. Use markdown formatting to highlight key relationships:\n\n{node_content}",
+            'deeper_dive': f"As the author, expand on this concept with more advanced details and nuances. Use markdown formatting with headers and emphasis:\n\n{node_content}",
+            'clarify': f"As the author, address potential points of confusion readers might have about this. Use markdown formatting to structure your clarifications:\n\n{node_content}",
+            'applications': f"As the author, describe real-world applications and use cases for this concept. Use markdown formatting with bullet points or numbered lists:\n\n{node_content}",
         }
         
-        prompt = custom_prompt if custom_prompt else prompts.get(preset, node_content)
+        # Reader-specific prompts
+        reader_prompts = {
+            'simplify': f"Simplify this text in plain language. Use markdown formatting with bullet points or short paragraphs for clarity:\n\n{node_content}",
+            'analogy': f"Provide a helpful analogy for this concept. Use markdown formatting to structure your analogy clearly:\n\n{node_content}",
+            'bullets': f"Convert this into a well-structured markdown bulleted list:\n\n{node_content}",
+            'summary': f"Summarize this text concisely using markdown formatting with headers and key points:\n\n{node_content}",
+            'questions': f"Generate 2-3 study questions about this text. Format as a markdown numbered list:\n\n{node_content}"
+        }
+        
+        # Use custom prompt if provided, otherwise fall back to preset prompts
+        if custom_prompt.strip():
+            # Custom prompt provided - use it directly and append the node content
+            prompt = f"{custom_prompt}\n\n{node_content}"
+        else:
+            # Fallback to preset prompts (for backward compatibility)
+            # Select appropriate prompt set
+            prompts = author_prompts if widget_type == 'author_llm' else reader_prompts
+            prompt = prompts.get(preset, node_content)
+        
+        # Enhanced system message based on widget type
+        system_message = (
+            "You are helping an author enhance their content with authoritative explanations and guidance. "
+            "Provide clear, educational content that builds upon the author's existing material."
+            if widget_type == 'author_llm' else
+            "You are helping a reader understand content better. Provide helpful, accessible explanations."
+        )
         
         try:
             response = openai.chat.completions.create(
                 model="gpt-3.5-turbo",
                 messages=[
-                    {"role": "system", "content": "You are a helpful assistant that helps readers understand content better."},
+                    {"role": "system", "content": system_message},
                     {"role": "user", "content": prompt}
                 ],
                 max_tokens=300,
@@ -1110,122 +1033,7 @@ def add_or_update_node(request):
 
 
 
-class SynthesisViewSet(viewsets.ModelViewSet):
-    """
-    ViewSet for managing Synthesis objects.
-    Only returns syntheses for nodes that the user can access (their own or public),
-    and only if the synthesis is by the user or by the cognition author.
-    """
-    serializer_class = SynthesisSerializer
-    permission_classes = [IsAuthenticated]
-
-    def get_queryset(self):
-        """
-        Return syntheses for nodes the user can access (public or their own).
-        Only include syntheses by user or the cognition author.
-        """
-        user = self.request.user
-        return Synthesis.objects.filter(
-            models.Q(node__cognition__user=user) | models.Q(node__cognition__is_public=True),
-        ).filter(
-            models.Q(user=user) | models.Q(user=models.F('node__cognition__user'))
-        )
-
-    @action(detail=False, methods=['post'])
-    def add_or_update(self, request):
-        """
-        Add or update the current user's synthesis for a given node.
-        Only one synthesis per (user, node) is allowed.
-        Returns the updated synthesis if successful.
-        """
-        node_id = request.data.get('node_id')
-        content = request.data.get('content')
-        if not node_id:
-            return Response({'error': 'node_id is required'}, status=status.HTTP_400_BAD_REQUEST)
-        try:
-            node = Node.objects.get(id=node_id)
-            # Permission: Only allow access if user is the cognition owner or the cognition is public
-            if node.cognition.user != request.user and not node.cognition.is_public:
-                return Response({'error': 'You do not have permission to access this node'}, status=status.HTTP_403_FORBIDDEN)
-            # Enforce one synthesis per user/node
-            synthesis, created = Synthesis.objects.update_or_create(
-                node=node,
-                user=request.user,
-                defaults={'content': content or ''}
-            )
-            serializer = SynthesisSerializer(synthesis, context={'request': request})
-            return Response(serializer.data)
-        except Node.DoesNotExist:
-            return Response({'error': 'Node not found'}, status=status.HTTP_404_NOT_FOUND)
-
-    @action(detail=True, methods=['post'])
-    def add_preset(self, request, pk=None):
-        """Add a preset response to a synthesis"""
-        synthesis = self.get_object()
-        preset_id = request.data.get('preset_id')
-        position = request.data.get('position', 
-                                   synthesis.preset_links.count())  # Default to end
-
-        if not preset_id:
-            return Response(
-                {'error': 'preset_id is required'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            preset = PresetResponse.objects.get(id=preset_id)
-            link, created = SynthesisPresetLink.objects.get_or_create(
-                synthesis=synthesis,
-                preset_response=preset,
-                defaults={'position': position}
-            )
-
-            if not created:
-                link.position = position
-                link.save()
-
-            # Fix positions of other links if needed
-            self._reorder_preset_links(synthesis)
-
-            return Response(SynthesisSerializer(synthesis).data)
-        except PresetResponse.DoesNotExist:
-            return Response(
-                {'error': 'Preset response not found'}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-    @action(detail=True, methods=['post'])
-    def remove_preset(self, request, pk=None):
-        """Remove a preset response from a synthesis"""
-        synthesis = self.get_object()
-        preset_id = request.data.get('preset_id')
-
-        if not preset_id:
-            return Response(
-                {'error': 'preset_id is required'}, 
-                status=status.HTTP_400_BAD_REQUEST
-            )
-
-        try:
-            link = synthesis.preset_links.get(preset_response_id=preset_id)
-            link.delete()
-
-            # Fix positions of other links
-            self._reorder_preset_links(synthesis)
-
-            return Response(SynthesisSerializer(synthesis).data)
-        except SynthesisPresetLink.DoesNotExist:
-            return Response(
-                {'error': 'Preset not found in this synthesis'}, 
-                status=status.HTTP_404_NOT_FOUND
-            )
-
-    def _reorder_preset_links(self, synthesis):
-        """Helper to ensure preset links have sequential positions"""
-        for i, link in enumerate(synthesis.preset_links.all().order_by('position')):
-            if link.position != i:
-                link.position = i
-                link.save()
+# Second SynthesisViewSet removed - functionality consolidated into widget system
 
 class PresetResponseViewSet(viewsets.ModelViewSet):
     queryset = PresetResponse.objects.all().order_by('category', 'title')

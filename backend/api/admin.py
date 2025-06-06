@@ -1,5 +1,6 @@
 from django.contrib import admin
-from .models import Cognition, Node, Synthesis, PresetResponse, SynthesisPresetLink, Arc, UserProfile
+from .models import Cognition, Node, PresetResponse, Arc, UserProfile, Widget, WidgetInteraction
+# Synthesis and SynthesisPresetLink removed - functionality replaced by widget system
 
 class NodeInline(admin.TabularInline):
     model = Node
@@ -16,26 +17,39 @@ class CognitionAdmin(admin.ModelAdmin):
         return obj.nodes.count()
     get_nodes_count.short_description = 'Nodes'
 
-class SynthesisInline(admin.StackedInline):
-    model = Synthesis
+class WidgetInline(admin.TabularInline):
+    model = Widget
     extra = 0
+    fields = ('widget_type', 'title', 'content', 'position', 'is_required')
+    readonly_fields = ('created_at',)
 
 @admin.register(Node)
 class NodeAdmin(admin.ModelAdmin):
     list_display = ('cognition', 'position', 'is_illuminated', 'character_count', 'created_at')
     list_filter = ('is_illuminated', 'created_at', 'cognition')
     search_fields = ('content',)
-    inlines = [SynthesisInline]
+    inlines = [WidgetInline]  # Changed from SynthesisInline to WidgetInline
 
-class SynthesisPresetLinkInline(admin.TabularInline):
-    model = SynthesisPresetLink
+# Synthesis admin classes removed - functionality replaced by widget system
+
+class WidgetInteractionInline(admin.TabularInline):
+    model = WidgetInteraction
     extra = 0
+    fields = ('user', 'completed', 'quiz_answer', 'created_at')
+    readonly_fields = ('created_at',)
 
-@admin.register(Synthesis)
-class SynthesisAdmin(admin.ModelAdmin):
-    list_display = ('node', 'created_at', 'updated_at')
-    search_fields = ('content',)
-    inlines = [SynthesisPresetLinkInline]
+@admin.register(Widget)
+class WidgetAdmin(admin.ModelAdmin):
+    list_display = ('node', 'user', 'widget_type', 'title', 'position', 'is_required', 'created_at')
+    list_filter = ('widget_type', 'is_required', 'created_at', 'user')
+    search_fields = ('title', 'content')
+    inlines = [WidgetInteractionInline]
+
+@admin.register(WidgetInteraction)
+class WidgetInteractionAdmin(admin.ModelAdmin):
+    list_display = ('widget', 'user', 'completed', 'quiz_answer', 'created_at')
+    list_filter = ('completed', 'created_at', 'widget__widget_type')
+    search_fields = ('widget__title', 'user__username')
 
 @admin.register(PresetResponse)
 class PresetResponseAdmin(admin.ModelAdmin):

@@ -2,9 +2,12 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import debounce from 'lodash.debounce';
 import { useParams, useNavigate } from "react-router-dom";
-import { FaTrashAlt, FaHome, FaStar, FaRegStar, FaEdit, FaPlus, FaCommentDots, FaLightbulb, FaCut, FaLink, FaArrowUp, FaArrowDown, FaStepBackward, FaStepForward, FaClipboard, FaExclamationTriangle } from "react-icons/fa";
+import { FaTrashAlt, FaHome, FaStar, FaRegStar, FaEdit, FaPlus, FaCut, FaLink, FaArrowUp, FaArrowDown, FaStepBackward, FaStepForward, FaClipboard, FaExclamationTriangle } from "react-icons/fa";
+// Removed FaCommentDots, FaLightbulb - synthesis functionality consolidated into widgets
 import WidgetCard from './widgets/WidgetCard';
 import WidgetCreator from './widgets/WidgetCreator';
+import WidgetEditor from './widgets/WidgetEditor';
+import MarkdownRenderer from './MarkdownRenderer';
 import axiosInstance from "../axiosConfig";
 import { summarizeNode } from "../axiosConfig";
 import "./ReadingMode.css";
@@ -15,13 +18,14 @@ function ReadingMode() {
   const [cognition, setCognition] = useState(null);
   const [titleInput, setTitleInput] = useState("");
   const [nodes, setNodes] = useState([]);
+  // Store current node index in state to preserve it across updates
   const [currentNodeIndex, setCurrentNodeIndex] = useState(0);
-  const [userSynthesis, setUserSynthesis] = useState("");
-  const [hasUserSynthesis, setHasUserSynthesis] = useState(false);
+  const [preserveNodeIndex, setPreserveNodeIndex] = useState(false);
+  // Synthesis state removed - functionality consolidated into widgets
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState(null);
   const [isEditMode, setIsEditMode] = useState(false);
-  const [synthesisExpanded, setSynthesisExpanded] = useState(false);
+  // Synthesis UI state removed - functionality consolidated into widgets
   const [actionButtonsExpanded, setActionButtonsExpanded] = useState(false);
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState('');
@@ -32,11 +36,13 @@ function ReadingMode() {
   const [cursorPosition, setCursorPosition] = useState(0);
   const [showWidgetCreator, setShowWidgetCreator] = useState(false);
   const [blockedByRequired, setBlockedByRequired] = useState(false);
+  const [editingWidget, setEditingWidget] = useState(null);
+  const [showWidgetEditor, setShowWidgetEditor] = useState(false);
 
   const currentNode = nodes[currentNodeIndex] || null;
   const [nodeText, setNodeText] = useState("");
   const textareaRef = useRef(null);
-  const synthesisRef = useRef(null);
+  // synthesisRef removed - functionality consolidated into widgets
   const scrollContainerRef = useRef(null);
 
   // Auth context and owner check
@@ -69,18 +75,16 @@ function ReadingMode() {
       
       await fetchCognition();
       
-      // Smart positioning after deletion
+      // Preserve current node position after deletion
+      const newNodeCount = nodes.length - 1;
       let newIndex = currentIndex;
-      if (totalNodes === 1) {
-        // If it was the only node, stay at 0
+      if (newNodeCount === 0) {
         newIndex = 0;
-      } else if (currentIndex === totalNodes - 1) {
-        // If we deleted the last node, go to the new last node
-        newIndex = currentIndex - 1;
-      } else {
-        // Otherwise, stay at the same index (which now shows the next node)
-        newIndex = currentIndex;
+      } else if (currentIndex >= newNodeCount) {
+        newIndex = newNodeCount - 1;
       }
+      
+      setCurrentNodeIndex(newIndex);
       
       // Force scroll to the correct position after refresh
       setTimeout(() => {
@@ -131,39 +135,8 @@ function ReadingMode() {
     }
   }, [currentNode]);
 
-  // Debounced save for user synthesis
-  const debouncedSaveUserSynthesis = useCallback(
-    debounce(async (text) => {
-      if (!currentNode) return;
-      try {
-        await axiosInstance.post("/syntheses/add_or_update/", {
-          node_id: currentNode.id,
-          content: text
-        });
-        setNodes(nodes => {
-          const updatedNodes = [...nodes];
-          const syntheses = [...(updatedNodes[currentNodeIndex].syntheses || [])];
-          const idx = syntheses.findIndex(s => !s.is_author);
-          if (idx >= 0) {
-            syntheses[idx] = { ...syntheses[idx], content: text };
-          } else {
-            syntheses.push({ content: text, is_author: false });
-          }
-          updatedNodes[currentNodeIndex] = {
-            ...updatedNodes[currentNodeIndex],
-            syntheses: syntheses
-          };
-          return updatedNodes;
-        });
-        setHasUserSynthesis(true);
-        displayToast("Your synthesis saved");
-      } catch (err) {
-        setError("Failed to save your synthesis");
-      }
-    }, 1000),
-    [currentNode, currentNodeIndex]
-  );
-
+  // Synthesis debounced save function removed - functionality consolidated into widgets
+  
   // Debounced save for node content
   const debouncedSaveNodeContent = useCallback(
     debounce(async (nodeId, content) => {
@@ -180,10 +153,10 @@ function ReadingMode() {
   // Cancel debounce on unmount
   useEffect(() => {
     return () => {
-      debouncedSaveUserSynthesis.cancel();
+      // debouncedSaveUserSynthesis.cancel(); // Removed - functionality consolidated into widgets
       debouncedSaveNodeContent.cancel();
     };
-  }, [debouncedSaveUserSynthesis, debouncedSaveNodeContent]);
+  }, [debouncedSaveNodeContent]); // Removed debouncedSaveUserSynthesis dependency
 
   // Handle node content changes in edit mode
   const handleNodeContentChange = (e) => {
@@ -341,26 +314,52 @@ function ReadingMode() {
       console.log('Creating widget:', { widgetData, isLLM }); // Debug log
       
       if (isLLM) {
-        // Use the special LLM endpoint
+        // Handle both author and reader LLM widgets
         console.log('Using LLM endpoint');
         response = await axiosInstance.post('/widgets/create_llm_widget/', {
           node_id: widgetData.node,
           llm_preset: widgetData.llm_preset,
-          custom_prompt: widgetData.llm_custom_prompt || ''
+          custom_prompt: widgetData.llm_custom_prompt || '',
+          widget_type: widgetData.widget_type  // NEW parameter
         });
       } else {
-        // Standard widget creation - ensure content is provided
+        // Standard widget creation with improved validation
         console.log('Using standard endpoint');
         
-        // For non-LLM widgets, ensure content is not empty
-        if (!widgetData.content || !widgetData.content.trim()) {
-          throw new Error('Content is required for this widget type');
+        // Validate content based on widget type
+        const { widget_type, content, quiz_question, title } = widgetData;
+        
+        if (widget_type === 'author_quiz' || widget_type === 'reader_quiz') {
+          // For quiz widgets, require quiz_question instead of content
+          if (!quiz_question || !quiz_question.trim()) {
+            throw new Error('Quiz question is required for quiz widgets');
+          }
+        } else if (widget_type === 'author_remark' || widget_type === 'reader_remark') {
+          // For remark widgets, require either content or title
+          if ((!content || !content.trim()) && (!title || !title.trim())) {
+            throw new Error('Content or title is required for remark widgets');
+          }
+        } else if (widget_type === 'author_dialog') {
+          // For dialog widgets, require content
+          if (!content || !content.trim()) {
+            throw new Error('Content is required for dialog widgets');
+          }
         }
+        // LLM widgets are handled above, no additional validation needed
         
         response = await axiosInstance.post('/widgets/', widgetData);
       }
       
-      await fetchCognition(); // Refresh to get updated widgets
+      // Optimistic update: Add widget to current node only
+      const newWidget = response.data;
+      setNodes(prevNodes => 
+        prevNodes.map(node => 
+          node.id === widgetData.node 
+            ? { ...node, widgets: [...(node.widgets || []), newWidget] }
+            : node
+        )
+      );
+      
       setShowWidgetCreator(false);
       displayToast('Widget created successfully');
     } catch (err) {
@@ -376,18 +375,39 @@ function ReadingMode() {
     
     try {
       await axiosInstance.delete(`/widgets/${widgetId}/`);
-      await fetchCognition();
+      
+      // Optimistic update: Remove widget from nodes
+      setNodes(prevNodes => 
+        prevNodes.map(node => ({
+          ...node,
+          widgets: node.widgets ? node.widgets.filter(w => w.id !== widgetId) : []
+        }))
+      );
+      
       displayToast('Widget deleted');
     } catch (err) {
       console.error('Error deleting widget:', err);
       setError('Failed to delete widget');
+      // Revert on error by refetching
+      fetchCognition();
     }
   };
 
   const interactWithWidget = async (widgetId, interactionData) => {
     try {
-      await axiosInstance.post(`/widgets/${widgetId}/interact/`, interactionData);
-      await fetchCognition(); // Refresh to update interaction state
+      const response = await axiosInstance.post(`/widgets/${widgetId}/interact/`, interactionData);
+      
+      // Optimistic update: Update widget interaction in nodes
+      setNodes(prevNodes => 
+        prevNodes.map(node => ({
+          ...node,
+          widgets: node.widgets ? node.widgets.map(widget => 
+            widget.id === widgetId 
+              ? { ...widget, user_interaction: response.data }
+              : widget
+          ) : []
+        }))
+      );
     } catch (err) {
       console.error('Error recording widget interaction:', err);
       setError('Failed to record interaction');
@@ -395,8 +415,39 @@ function ReadingMode() {
   };
 
   const editWidget = (widget) => {
-    // For now, just show a toast - we can implement edit functionality later
-    displayToast('Widget editing coming soon!');
+    setEditingWidget(widget);
+    setShowWidgetEditor(true);
+  };
+
+  const saveWidgetEdit = async (widgetId, updateData) => {
+    try {
+      const response = await axiosInstance.patch(`/widgets/${widgetId}/`, updateData);
+      
+      // Optimistic update: Update widget in nodes
+      setNodes(prevNodes => 
+        prevNodes.map(node => ({
+          ...node,
+          widgets: node.widgets ? node.widgets.map(widget => 
+            widget.id === widgetId 
+              ? { ...widget, ...response.data }
+              : widget
+          ) : []
+        }))
+      );
+      
+      setShowWidgetEditor(false);
+      setEditingWidget(null);
+      displayToast('Widget updated successfully');
+    } catch (err) {
+      console.error('Error updating widget:', err);
+      const errorMsg = err.response?.data?.error || err.response?.data?.content?.[0] || 'Failed to update widget';
+      setError(errorMsg);
+    }
+  };
+
+  const cancelWidgetEdit = () => {
+    setShowWidgetEditor(false);
+    setEditingWidget(null);
   };
 
   // Check if current node has required widgets that aren't completed
@@ -519,25 +570,7 @@ function ReadingMode() {
     scrollToNode(index);
   };
 
-  const handleSynthesisExpand = () => {
-    setSynthesisExpanded(true);
-  };
-
-  const handleSynthesisCollapse = () => {
-    setSynthesisExpanded(false);
-    setActionButtonsExpanded(false);
-  };
-
-  const toggleActionButtons = () => {
-    setActionButtonsExpanded(!actionButtonsExpanded);
-  };
-
-  // Handle user synthesis changes with debounced save
-  const handleUserSynthesisChange = (e) => {
-    const text = e.target.value;
-    setUserSynthesis(text);
-    debouncedSaveUserSynthesis(text);
-  };
+  // Synthesis handlers removed - functionality consolidated into widgets
 
   // Delete cognition handler
   const handleDeleteCognition = async () => {
@@ -561,12 +594,12 @@ function ReadingMode() {
     }
   };
 
-  // Fetch cognition and nodes
+  // Fetch cognition and nodes (only used for initial load and major operations)
   const fetchCognition = useCallback(async () => {
     try {
       setIsLoading(true);
       setError(null);
-      const response = await axiosInstance.get(`/cognitions/${id}/?include_syntheses=true`);
+      const response = await axiosInstance.get(`/cognitions/${id}/`); // Removed syntheses parameter
       setCognition(response.data);
       setTitleInput(response.data.title);
       setNodes(response.data.nodes || []);
@@ -582,18 +615,7 @@ function ReadingMode() {
     fetchCognition();
   }, [fetchCognition, id]);
 
-  // Update user synthesis when node changes
-  useEffect(() => {
-    if (nodes.length && currentNodeIndex >= 0 && currentNodeIndex < nodes.length) {
-      const syntheses = nodes[currentNodeIndex]?.syntheses || [];
-      const userSyn = syntheses.find(s => !s.is_author);
-      setUserSynthesis(userSyn?.content || "");
-      setHasUserSynthesis(!!userSyn);
-    } else {
-      setUserSynthesis("");
-      setHasUserSynthesis(false);
-    }
-  }, [nodes, currentNodeIndex]);
+  // Synthesis update effect removed - functionality consolidated into widgets
 
   // Check required widgets when node changes
   useEffect(() => {
@@ -626,11 +648,7 @@ function ReadingMode() {
         case 'h':
           navigate('/');
           break;
-        case 'Escape':
-          if (synthesisExpanded) {
-            handleSynthesisCollapse();
-          }
-          break;
+        // Escape key handler for synthesis removed - functionality consolidated into widgets
         default:
           break;
       }
@@ -640,7 +658,7 @@ function ReadingMode() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [currentNodeIndex, nodes.length, navigate, synthesisExpanded, isTransitioning]);
+  }, [currentNodeIndex, nodes.length, navigate, isTransitioning]); // Removed synthesisExpanded
 
   // Loading states
   if (isLoading) {
@@ -693,7 +711,7 @@ function ReadingMode() {
 
   // Calculate heights for layout
   const headerHeight = 80;
-  const availableHeight = window.innerHeight - headerHeight; // No synthesis bar in layout
+  const availableHeight = window.innerHeight - headerHeight; // Full height available without synthesis bar
 
   return (
     <div style={{
@@ -951,15 +969,17 @@ function ReadingMode() {
                       placeholder="Edit node content..."
                     />
                   ) : (
-                    <div style={{
-                      fontSize: '1.4rem',
-                      lineHeight: '1.6',
-                      color: 'var(--primary-color)',
-                      textAlign: 'left',
-                      marginBottom: '1.5rem'
-                    }}>
-                      {node.content}
-                    </div>
+                    <MarkdownRenderer 
+                      content={node.content}
+                      className="markdown-content"
+                      style={{
+                        fontSize: '1.4rem',
+                        lineHeight: '1.6',
+                        textAlign: 'left',
+                        marginBottom: '1.5rem',
+                        color: 'var(--primary-color)' // Ensure proper text color
+                      }}
+                    />
                   )}
                   
                   {/* Widgets display for current node */}
@@ -1002,7 +1022,7 @@ function ReadingMode() {
                   )}
                   
                   {/* Widget Creator for current node */}
-                  {index === currentNodeIndex && (isEditMode || !synthesisExpanded) && (
+                  {index === currentNodeIndex && (isEditMode || isOwner) && (
                     <div style={{ marginBottom: '1rem' }}>
                       <WidgetCreator
                         nodeId={node.id}
@@ -1028,166 +1048,10 @@ function ReadingMode() {
         </div>
       </div>
 
-      {/* Bottom Synthesis/Edit Bar */}
-      {!isEditMode ? (
-        <>
-          {/* Synthesis Bar - Simple bottom bar */}
-          {!synthesisExpanded && (
-            <div style={{
-              position: 'fixed',
-              bottom: 0,
-              left: '12px',  // Start after timeline
-              right: 0,
-              padding: '1rem',
-              zIndex: 20
-            }}>
-              <div style={{
-                maxWidth: '600px',
-                margin: '0 auto',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '1rem'
-              }}>
-                <input
-                  type="text"
-                  placeholder="Add synthesis..."
-                  value={userSynthesis}
-                  onChange={(e) => setUserSynthesis(e.target.value)}
-                  onClick={handleSynthesisExpand}
-                  style={{
-                    flex: 1,
-                    padding: '0.75rem 1rem',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '8px',
-                    outline: 'none',
-                    fontSize: '1rem',
-                    backgroundColor: 'var(--input-background)',
-                    color: 'var(--primary-color)'
-                  }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Expanded Synthesis Area */}
-          {synthesisExpanded && (
-            <div style={{
-              position: 'fixed',
-              bottom: 0,
-              left: '12px',  // Start after timeline
-              right: 0,
-              height: '50vh',
-              backgroundColor: 'var(--card-background)',
-              borderTop: '1px solid var(--border-color)',
-              zIndex: 30,
-              display: 'flex',
-              flexDirection: 'column'
-            }}>
-              <div style={{
-                maxWidth: '600px',
-                margin: '0 auto',
-                width: '100%',
-                height: '100%',
-                display: 'flex',
-                flexDirection: 'column',
-                padding: '1rem'
-              }}>
-                <div style={{
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  marginBottom: '1rem'
-                }}>
-                  <h3 style={{ 
-                    margin: 0, 
-                    fontSize: '1.1rem',
-                    color: 'var(--primary-color)'
-                  }}>
-                    Your Synthesis
-                  </h3>
-                  
-                  {/* Action buttons in horizontal row */}
-                  <div style={{
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: '0.5rem'
-                  }}>
-                    <button 
-                      onClick={() => displayToast("Synthesize - coming soon!")}
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '50%',
-                        backgroundColor: 'var(--accent-color)',
-                        border: 'none',
-                        color: 'white',
-                        fontSize: '0.9rem',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                      title="Synthesize"
-                    >
-                      <FaLightbulb />
-                    </button>
-                    <button 
-                      onClick={() => displayToast("Ask questions - coming soon!")}
-                      style={{
-                        width: '32px',
-                        height: '32px',
-                        borderRadius: '50%',
-                        backgroundColor: 'var(--success-color)',
-                        border: 'none',
-                        color: 'white',
-                        fontSize: '0.9rem',
-                        cursor: 'pointer',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center'
-                      }}
-                      title="Ask questions"
-                    >
-                      <FaCommentDots />
-                    </button>
-                    <button
-                      onClick={handleSynthesisCollapse}
-                      style={{
-                        background: 'none',
-                        border: 'none',
-                        fontSize: '1.5rem',
-                        cursor: 'pointer',
-                        color: 'var(--secondary-color)'
-                      }}
-                    >
-                      ×
-                    </button>
-                  </div>
-                </div>
-                <textarea
-                  ref={synthesisRef}
-                  value={userSynthesis}
-                  onChange={handleUserSynthesisChange}
-                  placeholder="Write your synthesis here..."
-                  style={{
-                    flex: 1,
-                    padding: '1rem',
-                    border: '1px solid var(--border-color)',
-                    borderRadius: '8px',
-                    outline: 'none',
-                    fontSize: '1rem',
-                    resize: 'none',
-                    backgroundColor: 'var(--input-background)',
-                    color: 'var(--primary-color)'
-                  }}
-                  autoFocus
-                />
-              </div>
-            </div>
-          )}
-        </>
-      ) : (
-        /* Edit Mode Bar */
+      {/* Synthesis bar removed - functionality consolidated into widget system */}
+      
+      {/* Edit Mode Bar */}
+      {isEditMode && (
         <div style={{
           position: 'fixed',
           bottom: 0,
@@ -1580,6 +1444,16 @@ function ReadingMode() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Widget Editor Modal */}
+      {showWidgetEditor && editingWidget && (
+        <WidgetEditor
+          widget={editingWidget}
+          onSave={saveWidgetEdit}
+          onCancel={cancelWidgetEdit}
+          isVisible={showWidgetEditor}
+        />
       )}
 
       {/* Toast notification */}

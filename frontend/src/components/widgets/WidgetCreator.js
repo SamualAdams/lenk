@@ -13,13 +13,15 @@ const WidgetCreator = ({ nodeId, onCreateWidget, isAuthor }) => {
     correctAnswer: 'A',
     explanation: ''
   });
-  const [llmPreset, setLlmPreset] = useState('simplify');
+  const [llmPreset, setLlmPreset] = useState('explain');
+  const [customPrompt, setCustomPrompt] = useState('');
   const [isCreating, setIsCreating] = useState(false);
 
   const authorWidgetTypes = [
     { value: 'author_remark', label: 'Author Remark', icon: <FaStickyNote /> },
     { value: 'author_quiz', label: 'Quiz', icon: <FaCommentDots /> },
-    { value: 'author_dialog', label: 'Discussion', icon: <FaCommentDots /> }
+    { value: 'author_dialog', label: 'Discussion', icon: <FaCommentDots /> },
+    { value: 'author_llm', label: 'AI Assistant', icon: <FaLightbulb /> }
   ];
 
   const readerWidgetTypes = [
@@ -27,12 +29,70 @@ const WidgetCreator = ({ nodeId, onCreateWidget, isAuthor }) => {
     { value: 'reader_llm', label: 'AI Assistant', icon: <FaLightbulb /> }
   ];
 
-  const llmPresets = [
-    { value: 'simplify', label: 'Simplify this node' },
-    { value: 'analogy', label: 'Provide analogy' },
-    { value: 'bullets', label: 'Make bulleted list' },
-    { value: 'summary', label: 'Summarize' },
-    { value: 'questions', label: 'Generate questions' }
+  const authorLlmPresets = [
+    { 
+      value: 'explain', 
+      label: 'Provide detailed explanation',
+      prompt: 'As the author, provide a detailed explanation to help readers understand this concept better. Use markdown formatting (headers, bullet points, **bold**, *italic*) to structure your response clearly:'
+    },
+    { 
+      value: 'examples', 
+      label: 'Give practical examples',
+      prompt: 'As the author, provide 2-3 concrete examples that illustrate this concept. Use markdown formatting with numbered lists or bullet points:'
+    },
+    { 
+      value: 'context', 
+      label: 'Add background context',
+      prompt: 'As the author, provide important background context that readers need to understand this. Use markdown headers and formatting to organize the information:'
+    },
+    { 
+      value: 'connections', 
+      label: 'Show concept relationships',
+      prompt: 'As the author, explain how this concept connects to related ideas or principles. Use markdown formatting to highlight key relationships:'
+    },
+    { 
+      value: 'deeper_dive', 
+      label: 'Expand with advanced details',
+      prompt: 'As the author, expand on this concept with more advanced details and nuances. Use markdown formatting with headers and emphasis:'
+    },
+    { 
+      value: 'clarify', 
+      label: 'Clarify potential confusion',
+      prompt: 'As the author, address potential points of confusion readers might have about this. Use markdown formatting to structure your clarifications:'
+    },
+    { 
+      value: 'applications', 
+      label: 'Show real-world applications',
+      prompt: 'As the author, describe real-world applications and use cases for this concept. Use markdown formatting with bullet points or numbered lists:'
+    },
+  ];
+
+  const readerLlmPresets = [
+    { 
+      value: 'simplify', 
+      label: 'Simplify this node',
+      prompt: 'Simplify this text in plain language. Use markdown formatting with bullet points or short paragraphs for clarity:'
+    },
+    { 
+      value: 'analogy', 
+      label: 'Provide analogy',
+      prompt: 'Provide a helpful analogy for this concept. Use markdown formatting to structure your analogy clearly:'
+    },
+    { 
+      value: 'bullets', 
+      label: 'Make bulleted list',
+      prompt: 'Convert this into a well-structured markdown bulleted list:'
+    },
+    { 
+      value: 'summary', 
+      label: 'Summarize',
+      prompt: 'Summarize this text concisely using markdown formatting with headers and key points:'
+    },
+    { 
+      value: 'questions', 
+      label: 'Generate questions',
+      prompt: 'Generate 2-3 study questions about this text. Format as a markdown numbered list:'
+    }
   ];
 
   const handleCreate = async () => {
@@ -56,20 +116,27 @@ const WidgetCreator = ({ nodeId, onCreateWidget, isAuthor }) => {
         };
       }
 
-      if (widgetType === 'reader_llm') {
+      if (widgetType === 'reader_llm' || widgetType === 'author_llm') {
         widgetData = {
           ...widgetData,
-          llm_preset: llmPreset
+          llm_preset: llmPreset,
+          llm_custom_prompt: customPrompt // Use custom prompt instead of preset
         };
       }
 
-      await onCreateWidget(widgetData, widgetType === 'reader_llm');
+      await onCreateWidget(widgetData, widgetType === 'reader_llm' || widgetType === 'author_llm');
       resetForm();
     } catch (error) {
       console.error('Error creating widget:', error);
     } finally {
       setIsCreating(false);
     }
+  };
+
+  const handlePresetClick = (presetPrompt) => {
+    const currentText = customPrompt;
+    const newText = currentText ? currentText + '\n\n' + presetPrompt : presetPrompt;
+    setCustomPrompt(newText);
   };
 
   const resetForm = () => {
@@ -79,18 +146,30 @@ const WidgetCreator = ({ nodeId, onCreateWidget, isAuthor }) => {
     setTitle('');
     setIsRequired(false);
     setQuizData({ question: '', choices: ['', '', '', ''], correctAnswer: 'A', explanation: '' });
-    setLlmPreset('simplify');
+    setLlmPreset('explain'); // Default to author preset
+    setCustomPrompt(''); // Reset custom prompt
   };
+
+  // Update LLM preset default when widget type changes
+  React.useEffect(() => {
+    if (widgetType === 'author_llm') {
+      setLlmPreset('explain');
+      setCustomPrompt(''); // Clear custom prompt when switching widget types
+    } else if (widgetType === 'reader_llm') {
+      setLlmPreset('simplify');
+      setCustomPrompt(''); // Clear custom prompt when switching widget types
+    }
+  }, [widgetType]);
 
   const canCreate = () => {
     if (!widgetType) return false;
     
     if (widgetType === 'author_quiz') {
-      return quizData.question.trim() && quizData.choices.filter(c => c.trim()).length >= 2;
+    return quizData.question.trim() && quizData.choices.filter(c => c.trim()).length >= 2;
     }
     
-    if (widgetType === 'reader_llm') {
-      return true; // LLM widgets don't need manual content
+    if (widgetType === 'reader_llm' || widgetType === 'author_llm') {
+    return customPrompt.trim().length > 0; // Require custom prompt for LLM widgets
     }
     
     // For all other widgets, content is required
@@ -206,7 +285,7 @@ const WidgetCreator = ({ nodeId, onCreateWidget, isAuthor }) => {
         </div>
 
         {/* Title field (optional for most widgets) */}
-        {widgetType && widgetType !== 'reader_llm' && (
+        {widgetType && widgetType !== 'reader_llm' && widgetType !== 'author_llm' && (
           <div>
             <label style={{
               display: 'block',
@@ -237,8 +316,8 @@ const WidgetCreator = ({ nodeId, onCreateWidget, isAuthor }) => {
           </div>
         )}
 
-        {/* LLM Preset Selection */}
-        {widgetType === 'reader_llm' && (
+        {/* AI Custom Prompt Interface */}
+        {(widgetType === 'author_llm' || widgetType === 'reader_llm') && (
           <div>
             <label style={{
               display: 'block',
@@ -246,33 +325,75 @@ const WidgetCreator = ({ nodeId, onCreateWidget, isAuthor }) => {
               fontWeight: '500',
               marginBottom: '0.75rem',
               color: 'var(--primary-color)'
-            }}>AI Assistant Type</label>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-              {llmPresets.map(preset => (
-                <label key={preset.value} style={{
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '0.5rem',
-                  padding: '0.75rem',
-                  border: '1px solid var(--border-color)',
-                  borderRadius: '6px',
-                  cursor: 'pointer',
-                  backgroundColor: llmPreset === preset.value ? 'var(--hover-color)' : 'transparent',
-                  transition: 'all 0.2s ease'
-                }}>
-                  <input
-                    type="radio"
-                    name="llmPreset"
-                    value={preset.value}
-                    checked={llmPreset === preset.value}
-                    onChange={(e) => setLlmPreset(e.target.value)}
+            }}>Custom AI Prompt</label>
+            
+            {/* Custom Prompt Text Area */}
+            <textarea
+              value={customPrompt}
+              onChange={(e) => setCustomPrompt(e.target.value)}
+              style={{
+                width: '100%',
+                height: '120px',
+                border: '1px solid var(--border-color)',
+                borderRadius: '6px',
+                padding: '0.75rem',
+                fontSize: '0.9rem',
+                backgroundColor: 'var(--input-background)',
+                color: 'var(--primary-color)',
+                outline: 'none',
+                fontFamily: 'inherit',
+                resize: 'vertical',
+                marginBottom: '1rem'
+              }}
+              placeholder="Enter your custom prompt for the AI..."
+            />
+            
+            {/* Preset Buttons */}
+            <div style={{ marginBottom: '0.5rem' }}>
+              <div style={{
+                fontSize: '0.85rem',
+                fontWeight: '500',
+                color: 'var(--secondary-color)',
+                marginBottom: '0.5rem'
+              }}>Quick Add Presets:</div>
+              <div style={{ 
+                display: 'flex', 
+                flexWrap: 'wrap', 
+                gap: '0.5rem'
+              }}>
+                {(widgetType === 'author_llm' ? authorLlmPresets : readerLlmPresets).map(preset => (
+                  <button
+                    key={preset.value}
+                    type="button"
+                    onClick={() => handlePresetClick(preset.prompt)}
                     style={{
-                      accentColor: 'var(--accent-color)'
+                      padding: '0.4rem 0.8rem',
+                      fontSize: '0.8rem',
+                      backgroundColor: 'var(--hover-color)',
+                      color: 'var(--primary-color)',
+                      border: '1px solid var(--border-color)',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      transition: 'all 0.2s ease',
+                      fontFamily: 'inherit'
                     }}
-                  />
-                  <span style={{ fontSize: '0.9rem', color: 'var(--primary-color)' }}>{preset.label}</span>
-                </label>
-              ))}
+                    onMouseEnter={(e) => {
+                      e.target.style.backgroundColor = 'var(--card-background)';
+                    }}
+                    onMouseLeave={(e) => {
+                      e.target.style.backgroundColor = 'var(--hover-color)';
+                    }}
+                  >
+                    {preset.label}
+                  </button>
+                ))}
+              </div>
+              <div style={{
+                fontSize: '0.75rem',
+                color: 'var(--secondary-color)',
+                marginTop: '0.5rem',
+                fontStyle: 'italic'
+              }}>Click buttons to add preset prompts to your custom prompt</div>
             </div>
           </div>
         )}
@@ -405,7 +526,7 @@ const WidgetCreator = ({ nodeId, onCreateWidget, isAuthor }) => {
         )}
 
         {/* Content Field for Non-Quiz, Non-LLM Widgets */}
-        {widgetType && widgetType !== 'author_quiz' && widgetType !== 'reader_llm' && (
+        {widgetType && widgetType !== 'author_quiz' && widgetType !== 'reader_llm' && widgetType !== 'author_llm' && (
           <div>
             <label style={{
               display: 'block',
@@ -489,8 +610,8 @@ const WidgetCreator = ({ nodeId, onCreateWidget, isAuthor }) => {
               }
             }}
           >
-            {isCreating && widgetType === 'reader_llm' && <FaLightbulb style={{ animation: 'pulse 1.5s ease-in-out infinite' }} />}
-            {isCreating ? (widgetType === 'reader_llm' ? 'Generating...' : 'Creating...') : 'Create Widget'}
+            {isCreating && (widgetType === 'reader_llm' || widgetType === 'author_llm') && <FaLightbulb style={{ animation: 'pulse 1.5s ease-in-out infinite' }} />}
+            {isCreating ? ((widgetType === 'reader_llm' || widgetType === 'author_llm') ? 'Generating...' : 'Creating...') : 'Create Widget'}
           </button>
           <button
             onClick={resetForm}
