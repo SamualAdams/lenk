@@ -46,4 +46,4 @@ frontend/.parcel-cache/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
-coverage/
+coverage/__pycache__/
