@@ -66,6 +66,17 @@ export const summarizeNode = async (nodeId) => {
   return response.data.summary;
 };
 
+/**
+ * Convert raw text to properly formatted markdown using AI.
+ * Returns the formatted markdown text.
+ */
+export const convertToMarkdown = async (rawText) => {
+  const response = await axiosInstance.post('/text/convert_to_markdown/', {
+    raw_text: rawText
+  });
+  return response.data.markdown_text;
+};
+
 export default axiosInstance;
 
 // Special axios instance for registration and login (no credentials/cookies sent)

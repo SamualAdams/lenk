@@ -2,14 +2,15 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import debounce from 'lodash.debounce';
 import { useParams, useNavigate } from "react-router-dom";
-import { FaTrashAlt, FaHome, FaStar, FaRegStar, FaEdit, FaPlus, FaCut, FaLink, FaArrowUp, FaArrowDown, FaStepBackward, FaStepForward, FaClipboard, FaExclamationTriangle } from "react-icons/fa";
+import { FaTrashAlt, FaHome, FaStar, FaRegStar, FaEdit, FaPlus, FaCut, FaLink, FaArrowUp, FaArrowDown, FaStepBackward, FaStepForward, FaClipboard, FaExclamationTriangle, FaBrain, FaCog, FaRocket } from "react-icons/fa";
 // Removed FaCommentDots, FaLightbulb - synthesis functionality consolidated into widgets
 import WidgetCard from './widgets/WidgetCard';
 import WidgetCreator from './widgets/WidgetCreator';
 import WidgetEditor from './widgets/WidgetEditor';
 import MarkdownRenderer from './MarkdownRenderer';
+import SemanticAnalysisPanel from './SemanticAnalysisPanel';
 import axiosInstance from "../axiosConfig";
-import { summarizeNode } from "../axiosConfig";
+import { summarizeNode, convertToMarkdown } from "../axiosConfig";
 import "./ReadingMode.css";
 
 function ReadingMode() {
@@ -38,6 +39,18 @@ function ReadingMode() {
   const [blockedByRequired, setBlockedByRequired] = useState(false);
   const [editingWidget, setEditingWidget] = useState(null);
   const [showWidgetEditor, setShowWidgetEditor] = useState(false);
+  
+  // Semantic analysis state
+  const [showSemanticPanel, setShowSemanticPanel] = useState(false);
+  const [isAnalyzing, setIsAnalyzing] = useState(false);
+  const [analysisAttempted, setAnalysisAttempted] = useState(false);
+  const [analysisPreferences, setAnalysisPreferences] = useState({
+    target_segment_length: 'medium',
+    preserve_paragraphs: true,
+    create_table_of_contents: true,
+    analyze_reading_flow: true,
+    focus_on_concepts: true
+  });
 
   const currentNode = nodes[currentNodeIndex] || null;
   const [nodeText, setNodeText] = useState("");
@@ -54,11 +67,76 @@ function ReadingMode() {
     (cognition.user && typeof cognition.user === "object" && cognition.user.id === currentUser.user_id)
   );
 
-  // Toast message helper
-  const displayToast = (message) => {
-    setToastMessage(message);
-    setShowToast(true);
-    setTimeout(() => setShowToast(false), 2000);
+  // Fetch cognition and nodes (only used for initial load and major operations)
+  const fetchCognition = useCallback(async () => {
+    try {
+      setIsLoading(true);
+      setError(null);
+      const response = await axiosInstance.get(`/cognitions/${id}/`);
+      setCognition(response.data);
+      setTitleInput(response.data.title);
+      setNodes(response.data.nodes || []);
+      setIsLoading(false);
+    } catch (err) {
+      setError("Failed to load cognition data");
+      setIsLoading(false);
+    }
+  }, [id]);
+
+  // Auto-analyze when content is added (for authors only)
+  const autoAnalyzeContent = useCallback(async () => {
+    if (!isOwner || !cognition?.raw_content?.trim() || cognition?.analysis || analysisAttempted) {
+      return;
+    }
+    
+    // Only auto-analyze if content is substantial (more than 500 characters)
+    if (cognition.raw_content.length < 500) {
+      return;
+    }
+    
+    setIsAnalyzing(true);
+    setAnalysisAttempted(true); // Mark that we've attempted analysis for this cognition
+    
+    try {
+      console.log('Auto-analyzing content for author...');
+      const response = await axiosInstance.post(`/cognitions/${cognition.id}/quick_segment/`, {
+        create_nodes: false, // Don't recreate nodes, just analyze
+        max_segments: 15
+      });
+      
+      // Refresh cognition to get analysis data
+      await fetchCognition();
+      displayToast('Content automatically analyzed');
+    } catch (err) {
+      console.warn('Auto-analysis failed:', err.response?.data?.error || err.message);
+      // Silently fail for auto-analysis - don't show error to user
+    } finally {
+      setIsAnalyzing(false);
+    }
+  }, [isOwner, cognition?.id, analysisAttempted, fetchCognition]);
+
+  // Star/unstar a node
+  const handleStarNode = async (nodeId) => {
+    if (!isOwner) return;
+    
+    try {
+      await axiosInstance.post(`/nodes/${nodeId}/toggle_illumination/`);
+      
+      // Update local state immediately
+      setNodes(prevNodes => 
+        prevNodes.map(node => 
+          node.id === nodeId 
+            ? { ...node, is_illuminated: !node.is_illuminated }
+            : node
+        )
+      );
+      
+      const node = nodes.find(n => n.id === nodeId);
+      displayToast(node?.is_illuminated ? "Node unstarred" : "Node starred");
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || "Failed to toggle node star";
+      setError(errorMsg);
+    }
   };
   
   // Handle node deletion
@@ -97,9 +175,49 @@ function ReadingMode() {
       setError(errorMsg);
     }
   };
+  // Toast message helper
+  const displayToast = (message) => {
+    setToastMessage(message);
+    setShowToast(true);
+    setTimeout(() => setShowToast(false), 2000);
+  };
   
-  // Handle node merging with next node
-  const handleMergeWithNext = async () => {
+  // Handle node merging up (with previous node)
+  const handleMergeUp = async () => {
+    if (!currentNode || currentNodeIndex === 0) {
+      displayToast("No previous node to merge with");
+      return;
+    }
+    
+    if (!window.confirm("Merge this node with the previous node?")) return;
+    
+    try {
+      const previousNode = nodes[currentNodeIndex - 1];
+      const currentIndex = currentNodeIndex;
+      
+      // Merge current node into previous node
+      await axiosInstance.post(`/nodes/${previousNode.id}/merge_with_next/`, {
+        separator: ' '
+      });
+      
+      await fetchCognition();
+      
+      // Move to the merged node (which is now at the previous position)
+      setCurrentNodeIndex(currentIndex - 1);
+      
+      setTimeout(() => {
+        scrollToNode(currentIndex - 1);
+      }, 100);
+      
+      displayToast("Nodes merged successfully");
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || "Failed to merge nodes";
+      setError(errorMsg);
+    }
+  };
+
+  // Handle node merging down (with next node)
+  const handleMergeDown = async () => {
     if (!currentNode || currentNodeIndex === nodes.length - 1) {
       displayToast("No next node to merge with");
       return;
@@ -116,7 +234,6 @@ function ReadingMode() {
       
       await fetchCognition();
       
-      // Force scroll to the correct position after refresh
       setTimeout(() => {
         scrollToNode(currentIndex);
       }, 100);
@@ -127,6 +244,10 @@ function ReadingMode() {
       setError(errorMsg);
     }
   };
+  // Alias for legacy merge function name
+  const handleMergeWithNext = handleMergeDown;
+  // Alias for merging with previous (legacy name, if used)
+  const handleMergeWithPrevious = handleMergeUp;
 
   // Sync nodeText with current node
   useEffect(() => {
@@ -471,6 +592,192 @@ function ReadingMode() {
     setShowPasteModal(true);
     setPasteText('');
   };
+  
+  // Semantic analysis functions
+  const handleNavigateToSegment = (segmentIndex) => {
+    if (segmentIndex >= 0 && segmentIndex < nodes.length) {
+      scrollToNode(segmentIndex);
+    }
+  };
+
+  // Intelligent text splitting function
+  const splitIntoNodes = (text) => {
+    const MIN_NODE_LENGTH = 50;  // Minimum characters per node
+    const MAX_NODE_LENGTH = 2000; // Maximum characters per node
+    const PREFERRED_NODE_LENGTH = 300; // Target length for nodes
+    
+    // Step 1: Split by markdown structure (headers, horizontal rules, etc.)
+    const sections = text.split(/(?=^#{1,6}\s)/m); // Split before headers
+    
+    let nodes = [];
+    
+    for (let section of sections) {
+      section = section.trim();
+      if (!section) continue;
+      
+      // Check if this is a header line
+      const isHeader = /^#{1,6}\s/.test(section);
+      
+      if (isHeader) {
+        // Keep headers as separate nodes if they're substantial
+        const headerMatch = section.match(/^(#{1,6}\s[^\n]*)\n?([\s\S]*)$/);
+        if (headerMatch) {
+          const [, header, content] = headerMatch;
+          
+          // Add header as its own node if it has substance
+          if (header.trim().length >= 10) {
+            nodes.push(header.trim());
+          }
+          
+          // Process the content after the header
+          if (content.trim()) {
+            nodes.push(...splitTextIntoChunks(content.trim(), MIN_NODE_LENGTH, MAX_NODE_LENGTH, PREFERRED_NODE_LENGTH));
+          }
+        } else {
+          // Fallback: treat whole section as content
+          nodes.push(...splitTextIntoChunks(section, MIN_NODE_LENGTH, MAX_NODE_LENGTH, PREFERRED_NODE_LENGTH));
+        }
+      } else {
+        // Regular content - split intelligently
+        nodes.push(...splitTextIntoChunks(section, MIN_NODE_LENGTH, MAX_NODE_LENGTH, PREFERRED_NODE_LENGTH));
+      }
+    }
+    
+    // Final cleanup: merge tiny nodes and validate
+    return cleanupNodes(nodes, MIN_NODE_LENGTH);
+  };
+
+  // Split text into appropriate chunks
+  const splitTextIntoChunks = (text, minLength, maxLength, preferredLength) => {
+    if (text.length <= maxLength) {
+      return [text]; // No need to split
+    }
+    
+    const chunks = [];
+    
+    // First try splitting by double newlines (paragraph breaks)
+    const paragraphs = text.split(/\n\s*\n/).filter(p => p.trim());
+    
+    let currentChunk = '';
+    
+    for (let para of paragraphs) {
+      para = para.trim();
+      
+      // If adding this paragraph would exceed max length, save current chunk
+      if (currentChunk && (currentChunk.length + para.length + 2) > maxLength) {
+        if (currentChunk.trim()) {
+          chunks.push(currentChunk.trim());
+        }
+        currentChunk = para;
+      } 
+      // If current chunk + this paragraph is still reasonable, combine them
+      else if (currentChunk.length + para.length + 2 <= preferredLength * 1.5) {
+        currentChunk = currentChunk ? currentChunk + '\n\n' + para : para;
+      }
+      // If we have a good-sized chunk, save it and start new one
+      else if (currentChunk.length >= minLength) {
+        chunks.push(currentChunk.trim());
+        currentChunk = para;
+      }
+      // Otherwise keep building the chunk
+      else {
+        currentChunk = currentChunk ? currentChunk + '\n\n' + para : para;
+      }
+    }
+    
+    // Add the last chunk
+    if (currentChunk.trim()) {
+      chunks.push(currentChunk.trim());
+    }
+    
+    // If we still have chunks that are too long, split by sentences
+    const finalChunks = [];
+    for (let chunk of chunks) {
+      if (chunk.length > maxLength) {
+        finalChunks.push(...splitBySentences(chunk, minLength, maxLength, preferredLength));
+      } else {
+        finalChunks.push(chunk);
+      }
+    }
+    
+    return finalChunks;
+  };
+
+  // Split text by sentences when paragraphs are too long
+  const splitBySentences = (text, minLength, maxLength, preferredLength) => {
+    // Split by sentence endings, keeping the punctuation
+    const sentences = text.split(/(?<=[.!?])\s+/).filter(s => s.trim());
+    
+    const chunks = [];
+    let currentChunk = '';
+    
+    for (let sentence of sentences) {
+      // If adding this sentence would exceed preferred length and we have a good chunk
+      if (currentChunk.length >= minLength && 
+          (currentChunk.length + sentence.length + 1) > preferredLength) {
+        chunks.push(currentChunk.trim());
+        currentChunk = sentence;
+      }
+      // If adding would exceed max length, save what we have
+      else if ((currentChunk.length + sentence.length + 1) > maxLength) {
+        if (currentChunk.trim()) {
+          chunks.push(currentChunk.trim());
+        }
+        currentChunk = sentence;
+      }
+      // Otherwise add to current chunk
+      else {
+        currentChunk = currentChunk ? currentChunk + ' ' + sentence : sentence;
+      }
+    }
+    
+    if (currentChunk.trim()) {
+      chunks.push(currentChunk.trim());
+    }
+    
+    return chunks;
+  };
+
+  // Clean up nodes: merge tiny ones, remove empty ones
+  const cleanupNodes = (nodes, minLength) => {
+    const cleaned = [];
+    let i = 0;
+    
+    while (i < nodes.length) {
+      let currentNode = nodes[i].trim();
+      
+      // Skip empty nodes
+      if (!currentNode) {
+        i++;
+        continue;
+      }
+      
+      // If node is too short, try to merge with next node
+      if (currentNode.length < minLength && i + 1 < nodes.length) {
+        const nextNode = nodes[i + 1].trim();
+        
+        // Check if we can merge without creating too long a node
+        if (nextNode && (currentNode.length + nextNode.length + 2) <= 2000) {
+          // Merge with appropriate separator
+          const separator = currentNode.endsWith('.') || currentNode.endsWith('!') || currentNode.endsWith('?') ? '\n\n' : ' ';
+          currentNode = currentNode + separator + nextNode;
+          i += 2; // Skip the next node since we merged it
+        } else {
+          // Can't merge, keep as is if it's not too tiny
+          if (currentNode.length >= 15) { // Very minimum threshold
+            cleaned.push(currentNode);
+          }
+          i++;
+        }
+      } else {
+        // Node is good as is
+        cleaned.push(currentNode);
+        i++;
+      }
+    }
+    
+    return cleaned;
+  };
 
   // Process pasted text
   const handleProcessPaste = async () => {
@@ -478,18 +785,59 @@ function ReadingMode() {
     
     setIsProcessingPaste(true);
     try {
-      // Split by paragraphs (double newlines) or single newlines
-      const paragraphs = pasteText
-        .split(/\n\s*\n|\n/)
-        .map(p => p.trim())
-        .filter(p => p.length > 0);
+      let processedText = pasteText;
+      
+      // Step 1: Try to convert raw text to markdown using AI
+      try {
+        displayToast("Converting text to markdown...");
+        processedText = await convertToMarkdown(pasteText);
+        
+        console.log('AI conversion result:', { 
+          originalLength: pasteText.length, 
+          convertedLength: processedText.length,
+          originalStart: pasteText.substring(0, 100),
+          convertedStart: processedText.substring(0, 100),
+          originalEnd: pasteText.substring(pasteText.length - 100),
+          convertedEnd: processedText.substring(processedText.length - 100)
+        });
+        
+        // Check if conversion looks corrupted or truncated
+        const seemsCorrupted = (
+          processedText.length < pasteText.length * 0.3 ||  // Too short
+          processedText.includes('+ w') ||                   // Common corruption
+          processedText.includes('��') ||                    // Encoding issues
+          processedText.split(' ').length < pasteText.split(' ').length * 0.4 || // Too few words
+          !processedText.trim().endsWith('.') && !processedText.trim().endsWith('?') && !processedText.trim().endsWith('!') && pasteText.trim().length > 500 // Doesn't end properly for long text
+        );
+        
+        if (seemsCorrupted) {
+          console.warn('AI conversion appears corrupted/truncated, using original text');
+          displayToast("AI conversion had issues, using original formatting...");
+          processedText = pasteText;
+        }
+      } catch (conversionErr) {
+        console.warn('AI conversion failed, using original text:', conversionErr);
+        displayToast("AI conversion failed, using original formatting...");
+        // Fallback: use original text if AI conversion fails
+        processedText = pasteText;
+      }
+      
+      // Step 2: Intelligently split text into meaningful nodes
+      let paragraphs = splitIntoNodes(processedText);
+      
+      console.log('Paragraph split result:', { 
+        originalLength: processedText.length,
+        paragraphCount: paragraphs.length,
+        firstFew: paragraphs.slice(0, 3).map(p => p.substring(0, 50) + '...')
+      });
       
       if (paragraphs.length === 0) {
         displayToast("No content to process");
         return;
       }
       
-      // Use the new bulk create endpoint
+      // Step 3: Create nodes with the processed content
+      displayToast(`Creating ${paragraphs.length} nodes...`);
       await axiosInstance.post(`/cognitions/${cognition.id}/bulk_create_nodes/`, {
         paragraphs
       });
@@ -498,8 +846,17 @@ function ReadingMode() {
       
       setShowPasteModal(false);
       setPasteText('');
-      displayToast(`Added ${paragraphs.length} new nodes`);
+      displayToast(`Added ${paragraphs.length} nodes successfully`);
+      
+      // Auto-analyze after adding content (for authors)
+      if (isOwner) {
+        setAnalysisAttempted(false); // Reset flag to allow analysis of new content
+        setTimeout(() => {
+          autoAnalyzeContent();
+        }, 1000);
+      }
     } catch (err) {
+      console.error('Process paste error:', err);
       const errorMsg = err.response?.data?.error || "Failed to process pasted text";
       setError(errorMsg);
     } finally {
@@ -600,26 +957,19 @@ function ReadingMode() {
     }
   };
 
-  // Fetch cognition and nodes (only used for initial load and major operations)
-  const fetchCognition = useCallback(async () => {
-    try {
-      setIsLoading(true);
-      setError(null);
-      const response = await axiosInstance.get(`/cognitions/${id}/`); // Removed syntheses parameter
-      setCognition(response.data);
-      setTitleInput(response.data.title);
-      setNodes(response.data.nodes || []);
-      setIsLoading(false);
-    } catch (err) {
-      setError("Failed to load cognition data");
-      setIsLoading(false);
-    }
-  }, [id]);
 
   // Initial load
   useEffect(() => {
     fetchCognition();
+    setAnalysisAttempted(false); // Reset analysis flag for new cognition
   }, [fetchCognition, id]);
+
+  // Auto-analyze content when cognition is loaded (for authors) - only once per cognition
+  useEffect(() => {
+    if (cognition && isOwner && !isAnalyzing && !cognition.analysis && !analysisAttempted) {
+      autoAnalyzeContent();
+    }
+  }, [cognition?.id, isOwner, isAnalyzing, analysisAttempted]); // Only depend on cognition ID, not the whole object
 
   // Synthesis update effect removed - functionality consolidated into widgets
 
@@ -654,6 +1004,12 @@ function ReadingMode() {
         case 'h':
           navigate('/');
           break;
+        case 's':
+          if (isOwner && currentNode) {
+            e.preventDefault();
+            handleStarNode(currentNode.id);
+          }
+          break;
         // Escape key handler for synthesis removed - functionality consolidated into widgets
         default:
           break;
@@ -664,7 +1020,7 @@ function ReadingMode() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [currentNodeIndex, nodes.length, navigate, isTransitioning]); // Removed synthesisExpanded
+  }, [currentNodeIndex, nodes.length, navigate, isTransitioning, isOwner, currentNode]);
 
   // Loading states
   if (isLoading) {
@@ -765,6 +1121,47 @@ function ReadingMode() {
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          {/* Analysis indicator for authors */}
+          {isOwner && isAnalyzing && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              padding: '0.5rem 0.75rem',
+              background: 'var(--hover-color)',
+              borderRadius: '4px',
+              fontSize: '0.9rem',
+              color: 'var(--secondary-color)'
+            }}>
+              <FaCog className="spinning" />
+              Analyzing...
+            </div>
+          )}
+          
+          {/* Semantic Analysis Panel Toggle - visible to all if analysis exists */}
+          {cognition?.analysis && (
+            <button 
+              onClick={() => setShowSemanticPanel(!showSemanticPanel)}
+              style={{
+                background: showSemanticPanel ? 'var(--accent-color)' : 'transparent',
+                border: showSemanticPanel ? 'none' : '1px solid var(--accent-color)',
+                fontSize: '1rem',
+                color: showSemanticPanel ? 'white' : 'var(--accent-color)',
+                padding: '0.5rem 0.75rem',
+                borderRadius: '4px',
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '0.5rem',
+                transition: 'all 0.2s ease'
+              }}
+              title="Toggle analysis panel"
+            >
+              <FaBrain />
+              Analysis
+            </button>
+          )}
+          
           {isOwner && (
             <>
               {/* Edit Content Toggle Button */}
@@ -878,7 +1275,20 @@ function ReadingMode() {
                     left: 0,
                     right: 0,
                     bottom: 0,
-                    backgroundColor: 'var(--accent-color)',
+                    backgroundColor: node.is_illuminated ? '#e69138' : 'var(--accent-color)', // Golden if starred
+                    zIndex: 1
+                  }} />
+                )}
+                
+                {/* Golden background for starred nodes */}
+                {node.is_illuminated && index !== currentNodeIndex && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    backgroundColor: 'var(--illuminated-color)',
                     zIndex: 1
                   }} />
                 )}
@@ -1128,7 +1538,40 @@ function ReadingMode() {
             </button>
             
             <button 
-              onClick={handleMergeWithNext}
+              onClick={handleMergeUp}
+              disabled={currentNodeIndex === 0}
+              style={{
+                width: '40px',
+                height: '40px',
+                backgroundColor: 'var(--success-color)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '1rem',
+                cursor: 'pointer',
+                opacity: currentNodeIndex === 0 ? 0.5 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = '#45a049';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = 'var(--success-color)';
+                }
+              }}
+              title="Merge with previous node"
+            >
+              <FaArrowUp style={{ transform: 'rotate(-45deg)' }} />
+            </button>
+            
+            <button 
+              onClick={handleMergeDown}
               disabled={currentNodeIndex === nodes.length - 1}
               style={{
                 width: '40px',
@@ -1157,7 +1600,7 @@ function ReadingMode() {
               }}
               title="Merge with next node"
             >
-              <FaLink />
+              <FaArrowDown style={{ transform: 'rotate(-45deg)' }} />
             </button>
             
             <button 
@@ -1273,7 +1716,7 @@ function ReadingMode() {
             </button>
             </div>
             
-            {/* Utilities */}
+            {/* Tools */}
             <div style={{
               display: 'flex',
               gap: '0.5rem',
@@ -1284,6 +1727,39 @@ function ReadingMode() {
                 color: 'var(--secondary-color)',
                 marginRight: '0.5rem'
               }}>Tools:</span>
+            
+            <button 
+              onClick={() => handleStarNode(currentNode?.id)}
+              disabled={!currentNode}
+              style={{
+                width: '40px',
+                height: '40px',
+                backgroundColor: currentNode?.is_illuminated ? 'var(--illuminated-color)' : 'var(--secondary-color)',
+                color: currentNode?.is_illuminated ? '#000' : 'white',
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '1rem',
+                cursor: 'pointer',
+                opacity: !currentNode ? 0.5 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = currentNode?.is_illuminated ? '#d4af00' : '#777';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!e.target.disabled) {
+                  e.target.style.backgroundColor = currentNode?.is_illuminated ? 'var(--illuminated-color)' : 'var(--secondary-color)';
+                }
+              }}
+              title={currentNode?.is_illuminated ? "Unstar node (S)" : "Star node (S)"}
+            >
+              {currentNode?.is_illuminated ? <FaStar /> : <FaRegStar />}
+            </button>
             
             <button 
               onClick={handleBulkPaste}
@@ -1350,7 +1826,7 @@ function ReadingMode() {
                 fontSize: '1.1rem',
                 color: 'var(--primary-color)'
               }}>
-                Bulk Paste Text
+                Paste & Format Text
               </h3>
               <button
                 onClick={() => setShowPasteModal(false)}
@@ -1371,7 +1847,7 @@ function ReadingMode() {
               <textarea
                 value={pasteText}
                 onChange={(e) => setPasteText(e.target.value)}
-                placeholder="Paste your text here. Each paragraph will become a separate node."
+                placeholder="Paste your text here. AI will format it as markdown and create nodes from each paragraph."
                 style={{
                   width: '100%',
                   height: '300px',
@@ -1424,7 +1900,7 @@ function ReadingMode() {
                   opacity: (!pasteText.trim() || isProcessingPaste) ? 0.5 : 1
                 }}
               >
-                {isProcessingPaste ? 'Processing...' : 'Process & Add Nodes'}
+                {isProcessingPaste ? 'Processing...' : 'Format & Add Nodes'}
               </button>
             </div>
           </div>
@@ -1438,6 +1914,16 @@ function ReadingMode() {
           onSave={saveWidgetEdit}
           onCancel={cancelWidgetEdit}
           isVisible={showWidgetEditor}
+        />
+      )}
+
+      {/* Semantic Analysis Panel */}
+      {cognition?.analysis && (
+        <SemanticAnalysisPanel
+          analysis={cognition.analysis}
+          onNavigateToSegment={handleNavigateToSegment}
+          isVisible={showSemanticPanel}
+          onToggle={() => setShowSemanticPanel(!showSemanticPanel)}
         />
       )}
 

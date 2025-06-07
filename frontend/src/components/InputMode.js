@@ -89,8 +89,27 @@ function InputMode() {
         raw_content: newCognitionText,
         is_starred: false,
       });
-      // Process the raw content into nodes
-      await axiosInstance.post(`/cognitions/${response.data.id}/process_text/`);
+      
+      // Use semantic analysis for processing if text is substantial
+      const isLongText = newCognitionText.length > 500;
+      
+      if (isLongText) {
+        try {
+          // Try semantic quick segmentation first
+          await axiosInstance.post(`/cognitions/${response.data.id}/quick_segment/`, {
+            create_nodes: true,
+            max_segments: 20
+          });
+        } catch (semanticError) {
+          console.warn('Semantic analysis failed, falling back to basic processing:', semanticError);
+          // Fallback to original processing
+          await axiosInstance.post(`/cognitions/${response.data.id}/process_text/`);
+        }
+      } else {
+        // Use original processing for short text
+        await axiosInstance.post(`/cognitions/${response.data.id}/process_text/`);
+      }
+      
       setCognitions(prev => [...prev, response.data]);
       setShowNewCognitionModal(false);
       setNewCognitionText('');

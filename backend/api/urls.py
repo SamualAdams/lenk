@@ -14,6 +14,7 @@ urlpatterns = [
     path('auth/logout/', auth_views.logout_user, name='logout'),
     path('auth/user/', auth_views.get_user_info, name='user_info'),
     path('auth/refresh-token/', auth_views.refresh_token, name='refresh_token'),
+    path('text/convert_to_markdown/', views.convert_text_to_markdown, name='convert_text_to_markdown'),
 ]
 
 # Then add router URLs

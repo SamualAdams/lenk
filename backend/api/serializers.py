@@ -1,7 +1,10 @@
 # api/serializers.py
 from rest_framework import serializers
 from django.contrib.auth.models import User
-from .models import Cognition, Node, PresetResponse, Arc, UserProfile, Widget, WidgetInteraction
+from .models import (
+    Cognition, Node, PresetResponse, Arc, UserProfile, Widget, WidgetInteraction,
+    DocumentAnalysisResult, SemanticSegment
+)
 # Synthesis and SynthesisPresetLink removed - functionality consolidated into widgets
 
 class UserProfileSerializer(serializers.ModelSerializer):
@@ -122,6 +125,49 @@ class NodeSerializer(serializers.ModelSerializer):
         all_widgets = list(author_widgets) + list(reader_widgets)
         return WidgetSerializer(all_widgets, many=True, context=self.context).data
 
+class SemanticSegmentSerializer(serializers.ModelSerializer):
+    content = serializers.SerializerMethodField()
+    length = serializers.ReadOnlyField()
+    
+    class Meta:
+        model = SemanticSegment
+        fields = [
+            'id', 'start_position', 'end_position', 'title', 'summary',
+            'topic_keywords', 'importance_level', 'estimated_reading_time',
+            'semantic_coherence_score', 'sequence_order', 'content', 'length',
+            'created_at'
+        ]
+        read_only_fields = ['id', 'created_at', 'content', 'length']
+    
+    def get_content(self, obj):
+        """Return the actual text content for this segment"""
+        return obj.get_content()
+
+class DocumentAnalysisResultSerializer(serializers.ModelSerializer):
+    segments = SemanticSegmentSerializer(many=True, read_only=True)
+    processing_time_seconds = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = DocumentAnalysisResult
+        fields = [
+            'id', 'document_type', 'overall_summary', 'main_themes',
+            'target_audience', 'complexity_level', 'estimated_total_read_time',
+            'overall_coherence_score', 'segmentation_confidence',
+            'table_of_contents', 'reading_flow', 'segments',
+            'created_at', 'processing_time_ms', 'processing_time_seconds',
+            'openai_model_used'
+        ]
+        read_only_fields = [
+            'id', 'created_at', 'processing_time_ms', 'processing_time_seconds',
+            'segments'
+        ]
+    
+    def get_processing_time_seconds(self, obj):
+        """Convert processing time to seconds for easier frontend use"""
+        if obj.processing_time_ms:
+            return round(obj.processing_time_ms / 1000, 2)
+        return None
+
 class CognitionSerializer(serializers.ModelSerializer):
     nodes_count = serializers.SerializerMethodField()
     
@@ -137,9 +183,17 @@ class CognitionDetailSerializer(CognitionSerializer):
     user_id = serializers.ReadOnlyField(source='user.id')
     username = serializers.ReadOnlyField(source='user.username')
     nodes = NodeSerializer(many=True, read_only=True)
+    analysis = DocumentAnalysisResultSerializer(read_only=True)
+    has_semantic_analysis = serializers.SerializerMethodField()
     
     class Meta(CognitionSerializer.Meta):
-        fields = CognitionSerializer.Meta.fields + ['user_id', 'username', 'nodes']
+        fields = CognitionSerializer.Meta.fields + [
+            'user_id', 'username', 'nodes', 'analysis', 'has_semantic_analysis'
+        ]
+    
+    def get_has_semantic_analysis(self, obj):
+        """Check if this cognition has been semantically analyzed"""
+        return hasattr(obj, 'analysis') and obj.analysis is not None
 
 class ArcSerializer(serializers.ModelSerializer):
     class Meta:

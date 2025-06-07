@@ -1,6 +1,7 @@
 # api/models.py
 from django.db import models
 from django.contrib.auth.models import User
+import json
 
 class Cognition(models.Model):
     title = models.CharField(max_length=200)
@@ -198,3 +199,110 @@ class UserProfile(models.Model):
     
     def get_following(self):
         return self.following.all()
+
+class DocumentAnalysisResult(models.Model):
+    """Stores the results of semantic document analysis"""
+    
+    DOCUMENT_TYPES = [
+        ('academic_paper', 'Academic Paper'),
+        ('tutorial', 'Tutorial'),
+        ('article', 'Article'),
+        ('story', 'Story'),
+        ('reference', 'Reference'),
+        ('essay', 'Essay'),
+        ('manual', 'Manual'),
+        ('blog_post', 'Blog Post'),
+        ('news', 'News'),
+        ('other', 'Other'),
+    ]
+    
+    COMPLEXITY_LEVELS = [
+        ('beginner', 'Beginner'),
+        ('intermediate', 'Intermediate'),
+        ('advanced', 'Advanced'),
+        ('expert', 'Expert'),
+    ]
+    
+    cognition = models.OneToOneField(Cognition, on_delete=models.CASCADE, related_name='analysis')
+    
+    # Basic classification
+    document_type = models.CharField(max_length=50, choices=DOCUMENT_TYPES)
+    overall_summary = models.TextField()
+    main_themes = models.JSONField(default=list)  # List of strings
+    target_audience = models.CharField(max_length=200)
+    complexity_level = models.CharField(max_length=20, choices=COMPLEXITY_LEVELS)
+    
+    # Time estimates
+    estimated_total_read_time = models.PositiveIntegerField(help_text="Total reading time in seconds")
+    
+    # Quality metrics
+    overall_coherence_score = models.FloatField()
+    segmentation_confidence = models.FloatField()
+    
+    # Structured data (stored as JSON)
+    table_of_contents = models.JSONField(default=list)
+    reading_flow = models.JSONField(default=dict)
+    
+    # Processing metadata
+    created_at = models.DateTimeField(auto_now_add=True)
+    processing_time_ms = models.PositiveIntegerField(null=True, blank=True)
+    openai_model_used = models.CharField(max_length=50, default='gpt-4o')
+    
+    def __str__(self):
+        return f"Analysis for {self.cognition.title} ({self.document_type})"
+    
+    def get_table_of_contents_tree(self):
+        """Return table of contents as nested structure"""
+        return self.table_of_contents
+    
+    def get_reading_flow_order(self):
+        """Return suggested reading order"""
+        return self.reading_flow.get('segment_order', [])
+
+class SemanticSegment(models.Model):
+    """Individual semantic segments identified by AI analysis"""
+    
+    IMPORTANCE_LEVELS = [
+        ('primary', 'Primary'),
+        ('secondary', 'Secondary'),
+        ('supporting', 'Supporting'),
+    ]
+    
+    analysis = models.ForeignKey(DocumentAnalysisResult, on_delete=models.CASCADE, related_name='segments')
+    node = models.OneToOneField(Node, on_delete=models.CASCADE, related_name='semantic_segment', null=True, blank=True)
+    
+    # Position in original text
+    start_position = models.PositiveIntegerField()
+    end_position = models.PositiveIntegerField()
+    
+    # AI-generated metadata
+    title = models.CharField(max_length=200)
+    summary = models.TextField(max_length=500)
+    topic_keywords = models.JSONField(default=list)  # List of strings
+    importance_level = models.CharField(max_length=20, choices=IMPORTANCE_LEVELS)
+    
+    # Metrics
+    estimated_reading_time = models.PositiveIntegerField(help_text="Reading time in seconds")
+    semantic_coherence_score = models.FloatField()
+    
+    # Order and relationships
+    sequence_order = models.PositiveIntegerField(help_text="Order in the document")
+    
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        ordering = ['sequence_order']
+        unique_together = ['analysis', 'sequence_order']
+    
+    def __str__(self):
+        return f"Segment {self.sequence_order}: {self.title}"
+    
+    def get_content(self):
+        """Extract content from original text based on positions"""
+        if self.analysis.cognition.raw_content:
+            return self.analysis.cognition.raw_content[self.start_position:self.end_position]
+        return ""
+    
+    @property
+    def length(self):
+        return self.end_position - self.start_position
