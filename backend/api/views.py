@@ -730,9 +730,13 @@ class NodeViewSet(viewsets.ModelViewSet):
             # Insert the moving node at the new position
             all_nodes.insert(new_position, moving_node)
             
-            # First, move all nodes to negative positions to avoid conflicts
+            # Use high positive positions first to avoid conflicts
+            # Start from a high number that won't conflict
+            temp_start = max_pos + 1000
+            
+            # First, move all nodes to temporary high positions
             for i, update_node in enumerate(all_nodes):
-                temp_position = -(i + 1000)  # Use large negative numbers
+                temp_position = temp_start + i
                 update_node.position = temp_position
                 update_node.save()
             

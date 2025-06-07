@@ -177,18 +177,22 @@ function ReadingMode() {
 
   // Split node at cursor position
   const handleSplitNode = async () => {
-    if (!currentNode || !isEditMode) return;
+    if (!currentNode) return;
     
-    // Get the current cursor position from the textarea
-    let splitPoint = 0;
-    if (textareaRef.current) {
-      splitPoint = textareaRef.current.selectionStart;
-    } else {
-      splitPoint = cursorPosition;
+    // If not in edit mode, use the current node content as-is
+    let content = currentNode.content;
+    let splitPoint = Math.floor(content.length / 2); // Default to middle
+    
+    // If in edit mode, use the textarea content and cursor position
+    if (isEditMode) {
+      content = nodeText || currentNode.content;
+      if (textareaRef.current) {
+        splitPoint = textareaRef.current.selectionStart;
+      } else {
+        splitPoint = cursorPosition;
+      }
     }
     
-    // Use the current nodeText which is the edited version
-    const content = nodeText || currentNode.content;
     const beforeContent = content.substring(0, splitPoint).trim();
     const afterContent = content.substring(splitPoint).trim();
     
@@ -202,7 +206,7 @@ function ReadingMode() {
     });
     
     if (!beforeContent || !afterContent) {
-      displayToast(`Cannot split - need content on both sides of cursor (split at ${splitPoint})`);
+      displayToast(`Cannot split - need content on both sides of split point (${splitPoint})`);
       return;
     }
     
@@ -510,7 +514,8 @@ function ReadingMode() {
     
     const container = scrollContainerRef.current;
     const headerHeight = 80;
-    const availableHeight = window.innerHeight - headerHeight;
+    const editBarHeight = isOwner ? 80 : 0;
+    const availableHeight = window.innerHeight - headerHeight - editBarHeight;
     const targetScroll = index * availableHeight;
     
     // Smooth scroll to target position
@@ -523,7 +528,7 @@ function ReadingMode() {
     setTimeout(() => {
       setIsTransitioning(false);
     }, 300);
-  }, [isTransitioning, nodes.length]);
+  }, [isTransitioning, nodes.length, isOwner]);
 
   // Handle scroll events for snap detection
   const handleScroll = useCallback(() => {
@@ -531,7 +536,8 @@ function ReadingMode() {
     
     const container = scrollContainerRef.current;
     const headerHeight = 80;
-    const availableHeight = window.innerHeight - headerHeight;
+    const editBarHeight = isOwner ? 80 : 0;
+    const availableHeight = window.innerHeight - headerHeight - editBarHeight;
     const scrollTop = container.scrollTop;
     
     // Calculate which node should be active based on scroll position
@@ -541,7 +547,7 @@ function ReadingMode() {
     if (clampedIndex !== currentNodeIndex) {
       setCurrentNodeIndex(clampedIndex);
     }
-  }, [currentNodeIndex, isTransitioning, nodes.length]);
+  }, [currentNodeIndex, isTransitioning, nodes.length, isOwner]);
 
   // Debounced scroll handler
   const debouncedHandleScroll = useCallback(
@@ -711,7 +717,8 @@ function ReadingMode() {
 
   // Calculate heights for layout
   const headerHeight = 80;
-  const availableHeight = window.innerHeight - headerHeight; // Full height available without synthesis bar
+  const editBarHeight = isOwner ? 80 : 0; // Always account for edit bar if owner
+  const availableHeight = window.innerHeight - headerHeight - editBarHeight;
 
   return (
     <div style={{
@@ -760,7 +767,7 @@ function ReadingMode() {
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           {isOwner && (
             <>
-              {/* Edit Mode Toggle Button */}
+              {/* Edit Content Toggle Button */}
               <button 
                 onClick={() => setIsEditMode(!isEditMode)}
                 style={{
@@ -776,10 +783,10 @@ function ReadingMode() {
                   gap: '0.5rem',
                   transition: 'all 0.2s ease'
                 }}
-                title={isEditMode ? "Exit Edit Mode (E)" : "Enter Edit Mode (E)"}
+                title={isEditMode ? "Exit Content Edit (E)" : "Edit Content (E)"}
               >
                 <FaEdit />
-                {isEditMode ? 'Exit' : 'Edit'}
+                {isEditMode ? 'Exit Edit' : 'Edit Content'}
               </button>
               
               {/* Star Button */}
@@ -902,7 +909,7 @@ function ReadingMode() {
           <div 
             ref={scrollContainerRef}
             onScroll={debouncedHandleScroll}
-            className="hide-scrollbar"
+            className="hide-scrollbar main-scroll-container"
             style={{
               flex: 1,
               height: '100%',
@@ -910,33 +917,36 @@ function ReadingMode() {
               overflowX: 'hidden',
               scrollSnapType: 'y mandatory',
               scrollBehavior: 'smooth',
-              scrollbarWidth: 'none',
-              msOverflowStyle: 'none'
+              scrollbarWidth: 'thin',
+              scrollbarColor: 'rgba(255, 255, 255, 0.2) rgba(255, 255, 255, 0.05)'
             }}
           >
             {nodes.map((node, index) => (
               <div
                 key={node.id}
                 style={{
-                  height: `${availableHeight}px`,
+                  minHeight: `${availableHeight}px`,
+                  height: 'auto',
                   display: 'flex',
                   flexDirection: 'column',
-                  justifyContent: 'center',
-                  padding: '2rem',
+                  justifyContent: 'flex-start',
+                  padding: '2rem 1.5rem',
                   opacity: index === currentNodeIndex ? 1 : 0.4,
                   transform: index === currentNodeIndex ? 'scale(1)' : 'scale(0.95)',
-                  scrollSnapAlign: 'start'
+                  scrollSnapAlign: 'start',
+                  overflow: 'visible',
+                  boxSizing: 'border-box'
                 }}
               >
                 <div style={{
                   maxWidth: '600px',
                   margin: '0 auto',
                   width: '100%',
-                  maxHeight: '100%',
-                  overflowY: 'auto',
+                  minHeight: `${availableHeight * 0.7}px`,
                   display: 'flex',
                   flexDirection: 'column',
-                  flex: 1
+                  justifyContent: 'center',
+                  boxSizing: 'border-box'
                 }}>
                   {/* Node content - editable in edit mode */}
                   {isEditMode && index === currentNodeIndex ? (
@@ -984,11 +994,14 @@ function ReadingMode() {
                   
                   {/* Widgets display for current node */}
                   {index === currentNodeIndex && node.widgets && node.widgets.length > 0 && (
-                    <div style={{
-                      marginBottom: '1.5rem',
-                      maxHeight: '40vh',
-                      overflowY: 'auto'
-                    }}>
+                    <div 
+                      className="widget-container"
+                      style={{
+                        marginBottom: '1.5rem',
+                        maxHeight: '30vh',
+                        overflowY: 'auto',
+                        paddingRight: '4px'
+                      }}>
                       <div style={{
                         fontSize: '0.9rem',
                         fontWeight: '600',
@@ -1022,7 +1035,7 @@ function ReadingMode() {
                   )}
                   
                   {/* Widget Creator for current node */}
-                  {index === currentNodeIndex && (isEditMode || isOwner) && (
+                  {index === currentNodeIndex && isOwner && (
                     <div style={{ marginBottom: '1rem' }}>
                       <WidgetCreator
                         nodeId={node.id}
@@ -1050,8 +1063,8 @@ function ReadingMode() {
 
       {/* Synthesis bar removed - functionality consolidated into widget system */}
       
-      {/* Edit Mode Bar */}
-      {isEditMode && (
+      {/* Author Control Bar - Always visible for owners */}
+      {isOwner && (
         <div style={{
           position: 'fixed',
           bottom: 0,
@@ -1063,16 +1076,27 @@ function ReadingMode() {
           zIndex: 20
         }}>
           <div style={{
-            maxWidth: '600px',
+            maxWidth: '800px',
             margin: '0 auto',
-            display: 'grid',
-            gridTemplateColumns: 'repeat(auto-fit, minmax(50px, 1fr))',
-            gap: '0.75rem',
-            alignItems: 'center'
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: '1rem'
           }}>
+            {/* Content Operations */}
+            <div style={{
+              display: 'flex',
+              gap: '0.5rem',
+              alignItems: 'center'
+            }}>
+              <span style={{
+                fontSize: '0.8rem',
+                color: 'var(--secondary-color)',
+                marginRight: '0.5rem'
+              }}>Content:</span>
             <button 
               onClick={handleSplitNode}
-              disabled={!currentNode || !nodeText.trim()}
+              disabled={!currentNode || !currentNode.content.trim()}
               style={{
                 width: '40px',
                 height: '40px',
@@ -1082,7 +1106,7 @@ function ReadingMode() {
                 borderRadius: '4px',
                 fontSize: '1rem',
                 cursor: 'pointer',
-                opacity: (!currentNode || !nodeText.trim()) ? 0.5 : 1,
+                opacity: (!currentNode || !currentNode.content.trim()) ? 0.5 : 1,
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -1098,7 +1122,7 @@ function ReadingMode() {
                   e.target.style.backgroundColor = 'var(--accent-color)';
                 }
               }}
-              title="Split node at cursor"
+              title={isEditMode ? "Split node at cursor" : "Split node at middle"}
             >
               <FaCut />
             </button>
@@ -1168,6 +1192,19 @@ function ReadingMode() {
             >
               <FaTrashAlt />
             </button>
+            </div>
+            
+            {/* Node Movement */}
+            <div style={{
+              display: 'flex',
+              gap: '0.5rem',
+              alignItems: 'center'
+            }}>
+              <span style={{
+                fontSize: '0.8rem',
+                color: 'var(--secondary-color)',
+                marginRight: '0.5rem'
+              }}>Move:</span>
             
             <button 
               onClick={handleMoveUp}
@@ -1234,72 +1271,19 @@ function ReadingMode() {
             >
               <FaArrowDown />
             </button>
+            </div>
             
-            <button 
-              onClick={handleMoveToFirst}
-              disabled={currentNodeIndex === 0}
-              style={{
-                width: '40px',
-                height: '40px',
-                backgroundColor: 'var(--secondary-color)',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                fontSize: '1rem',
-                cursor: 'pointer',
-                opacity: currentNodeIndex === 0 ? 0.5 : 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.2s ease'
-              }}
-              onMouseEnter={(e) => {
-                if (!e.target.disabled) {
-                  e.target.style.backgroundColor = '#777';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!e.target.disabled) {
-                  e.target.style.backgroundColor = 'var(--secondary-color)';
-                }
-              }}
-              title="Move to first position"
-            >
-              <FaStepBackward />
-            </button>
-            
-            <button 
-              onClick={handleMoveToLast}
-              disabled={currentNodeIndex === nodes.length - 1}
-              style={{
-                width: '40px',
-                height: '40px',
-                backgroundColor: 'var(--secondary-color)',
-                color: 'white',
-                border: 'none',
-                borderRadius: '4px',
-                fontSize: '1rem',
-                cursor: 'pointer',
-                opacity: currentNodeIndex === nodes.length - 1 ? 0.5 : 1,
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                transition: 'all 0.2s ease'
-              }}
-              onMouseEnter={(e) => {
-                if (!e.target.disabled) {
-                  e.target.style.backgroundColor = '#777';
-                }
-              }}
-              onMouseLeave={(e) => {
-                if (!e.target.disabled) {
-                  e.target.style.backgroundColor = 'var(--secondary-color)';
-                }
-              }}
-              title="Move to last position"
-            >
-              <FaStepForward />
-            </button>
+            {/* Utilities */}
+            <div style={{
+              display: 'flex',
+              gap: '0.5rem',
+              alignItems: 'center'
+            }}>
+              <span style={{
+                fontSize: '0.8rem',
+                color: 'var(--secondary-color)',
+                marginRight: '0.5rem'
+              }}>Tools:</span>
             
             <button 
               onClick={handleBulkPaste}
@@ -1327,6 +1311,7 @@ function ReadingMode() {
             >
               <FaClipboard />
             </button>
+            </div>
           </div>
         </div>
       )}
