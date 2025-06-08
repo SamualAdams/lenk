@@ -2,15 +2,16 @@ import React, { useState, useEffect, useRef, useCallback } from "react";
 import { useAuth } from "../context/AuthContext";
 import debounce from 'lodash.debounce';
 import { useParams, useNavigate } from "react-router-dom";
-import { FaTrashAlt, FaHome, FaStar, FaRegStar, FaEdit, FaPlus, FaCut, FaLink, FaArrowUp, FaArrowDown, FaStepBackward, FaStepForward, FaClipboard, FaExclamationTriangle, FaBrain, FaCog, FaRocket } from "react-icons/fa";
+import { FaTrashAlt, FaHome, FaStar, FaRegStar, FaEdit, FaCut, FaArrowUp, FaArrowDown, FaClipboard, FaExclamationTriangle, FaBrain, FaBookOpen } from "react-icons/fa";
 // Removed FaCommentDots, FaLightbulb - synthesis functionality consolidated into widgets
 import WidgetCard from './widgets/WidgetCard';
 import WidgetCreator from './widgets/WidgetCreator';
 import WidgetEditor from './widgets/WidgetEditor';
 import MarkdownRenderer from './MarkdownRenderer';
 import SemanticAnalysisPanel from './SemanticAnalysisPanel';
+import TOCContainer from './TOCContainer';
 import axiosInstance from "../axiosConfig";
-import { summarizeNode, convertToMarkdown } from "../axiosConfig";
+import { summarizeNode, convertToMarkdown, generateTOC } from "../axiosConfig";
 import "./ReadingMode.css";
 
 function ReadingMode() {
@@ -42,15 +43,19 @@ function ReadingMode() {
   
   // Semantic analysis state
   const [showSemanticPanel, setShowSemanticPanel] = useState(false);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
-  const [analysisAttempted, setAnalysisAttempted] = useState(false);
-  const [analysisPreferences, setAnalysisPreferences] = useState({
-    target_segment_length: 'medium',
-    preserve_paragraphs: true,
-    create_table_of_contents: true,
-    analyze_reading_flow: true,
-    focus_on_concepts: true
-  });
+
+  // TOC state
+  const [isGeneratingTOC, setIsGeneratingTOC] = useState(false);
+
+  // Timeline interaction state
+  const [selectedNodes, setSelectedNodes] = useState(new Set());
+  const [isDragMode, setIsDragMode] = useState(false);
+  const [draggedNode, setDraggedNode] = useState(null);
+  const [dragOverIndex, setDragOverIndex] = useState(null);
+  
+  // Inline editing state
+  const [inlineEditingNode, setInlineEditingNode] = useState(null);
+  const [inlineEditContent, setInlineEditContent] = useState('');
 
   const currentNode = nodes[currentNodeIndex] || null;
   const [nodeText, setNodeText] = useState("");
@@ -83,37 +88,6 @@ function ReadingMode() {
     }
   }, [id]);
 
-  // Auto-analyze when content is added (for authors only)
-  const autoAnalyzeContent = useCallback(async () => {
-    if (!isOwner || !cognition?.raw_content?.trim() || cognition?.analysis || analysisAttempted) {
-      return;
-    }
-    
-    // Only auto-analyze if content is substantial (more than 500 characters)
-    if (cognition.raw_content.length < 500) {
-      return;
-    }
-    
-    setIsAnalyzing(true);
-    setAnalysisAttempted(true); // Mark that we've attempted analysis for this cognition
-    
-    try {
-      console.log('Auto-analyzing content for author...');
-      const response = await axiosInstance.post(`/cognitions/${cognition.id}/quick_segment/`, {
-        create_nodes: false, // Don't recreate nodes, just analyze
-        max_segments: 15
-      });
-      
-      // Refresh cognition to get analysis data
-      await fetchCognition();
-      displayToast('Content automatically analyzed');
-    } catch (err) {
-      console.warn('Auto-analysis failed:', err.response?.data?.error || err.message);
-      // Silently fail for auto-analysis - don't show error to user
-    } finally {
-      setIsAnalyzing(false);
-    }
-  }, [isOwner, cognition?.id, analysisAttempted, fetchCognition]);
 
   // Star/unstar a node
   const handleStarNode = async (nodeId) => {
@@ -587,6 +561,77 @@ function ReadingMode() {
     setBlockedByRequired(hasIncomplete);
   }, [currentNode]);
 
+  // TOC Functions
+  const handleTOCGeneration = async () => {
+    if (!isOwner) return;
+    
+    // Check if TOC already exists
+    const tocNode = nodes.find(node => node.node_type === 'toc');
+    if (tocNode) {
+      // Navigate to existing TOC
+      scrollToNode(0);
+      return;
+    }
+    
+    // Check minimum node requirement
+    const contentNodes = nodes.filter(node => node.node_type === 'content');
+    if (contentNodes.length < 2) {
+      displayToast('Need at least 2 content nodes to generate TOC');
+      return;
+    }
+    
+    setIsGeneratingTOC(true);
+    try {
+      displayToast('Generating Table of Contents...');
+      const result = await generateTOC(cognition.id, false);
+      
+      // Refresh cognition to get the new TOC node
+      await fetchCognition();
+      
+      // Navigate to the TOC node (position 0)
+      scrollToNode(0);
+      
+      displayToast(`TOC generated with ${result.sections_created} sections`);
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Failed to generate TOC';
+      setError(errorMsg);
+    } finally {
+      setIsGeneratingTOC(false);
+    }
+  };
+
+  const handleTOCRegeneration = async () => {
+    if (!isOwner) return;
+    
+    setIsGeneratingTOC(true);
+    try {
+      displayToast('Regenerating Table of Contents...');
+      const result = await generateTOC(cognition.id, true);
+      
+      // Refresh cognition to get the updated TOC
+      await fetchCognition();
+      
+      // Stay on TOC node (position 0)
+      scrollToNode(0);
+      
+      displayToast(`TOC regenerated with ${result.sections_created} sections`);
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Failed to regenerate TOC';
+      setError(errorMsg);
+    } finally {
+      setIsGeneratingTOC(false);
+    }
+  };
+
+  const handleTOCNavigation = (nodePosition) => {
+    // Navigate to the specified node position
+    const targetIndex = nodes.findIndex(node => node.position === nodePosition);
+    if (targetIndex !== -1) {
+      scrollToNode(targetIndex);
+    }
+  };
+
+
   // Handle bulk paste
   const handleBulkPaste = () => {
     setShowPasteModal(true);
@@ -787,74 +832,71 @@ function ReadingMode() {
     try {
       let processedText = pasteText;
       
-      // Step 1: Try to convert raw text to markdown using AI
-      try {
-        displayToast("Converting text to markdown...");
-        processedText = await convertToMarkdown(pasteText);
-        
-        console.log('AI conversion result:', { 
-          originalLength: pasteText.length, 
-          convertedLength: processedText.length,
-          originalStart: pasteText.substring(0, 100),
-          convertedStart: processedText.substring(0, 100),
-          originalEnd: pasteText.substring(pasteText.length - 100),
-          convertedEnd: processedText.substring(processedText.length - 100)
-        });
-        
-        // Check if conversion looks corrupted or truncated
-        const seemsCorrupted = (
-          processedText.length < pasteText.length * 0.3 ||  // Too short
-          processedText.includes('+ w') ||                   // Common corruption
-          processedText.includes('��') ||                    // Encoding issues
-          processedText.split(' ').length < pasteText.split(' ').length * 0.4 || // Too few words
-          !processedText.trim().endsWith('.') && !processedText.trim().endsWith('?') && !processedText.trim().endsWith('!') && pasteText.trim().length > 500 // Doesn't end properly for long text
-        );
-        
-        if (seemsCorrupted) {
-          console.warn('AI conversion appears corrupted/truncated, using original text');
-          displayToast("AI conversion had issues, using original formatting...");
-          processedText = pasteText;
+      // Step 1: Try AI semantic segmentation first
+      if (pasteText.length > 200) {
+        try {
+          displayToast("Processing with AI semantic segmentation...");
+          
+          // Update the cognition's raw content first
+          await axiosInstance.patch(`/cognitions/${cognition.id}/`, {
+            raw_content: pasteText
+          });
+          
+          // Use semantic segmentation to create nodes
+          await axiosInstance.post(`/cognitions/${cognition.id}/quick_segment/`, {
+            create_nodes: true,
+            max_segments: 20
+          });
+          
+          displayToast("AI segmentation completed successfully");
+          
+        } catch (semanticError) {
+          console.warn('AI segmentation failed, falling back to manual processing:', semanticError);
+          displayToast("AI segmentation failed, using fallback processing...");
+          
+          // Fallback: Use the old manual splitting method
+          let processedText = pasteText;
+          
+          // Try to convert to markdown
+          try {
+            processedText = await convertToMarkdown(pasteText);
+          } catch (conversionErr) {
+            console.warn('Markdown conversion also failed, using raw text');
+          }
+          
+          // Manual splitting
+          let paragraphs = splitIntoNodes(processedText);
+          
+          if (paragraphs.length === 0) {
+            displayToast("No content to process");
+            return;
+          }
+          
+          await axiosInstance.post(`/cognitions/${cognition.id}/bulk_create_nodes/`, {
+            paragraphs
+          });
         }
-      } catch (conversionErr) {
-        console.warn('AI conversion failed, using original text:', conversionErr);
-        displayToast("AI conversion failed, using original formatting...");
-        // Fallback: use original text if AI conversion fails
-        processedText = pasteText;
+      } else {
+        // For short text, use simple processing
+        displayToast("Processing short text...");
+        let paragraphs = splitIntoNodes(pasteText);
+        
+        if (paragraphs.length === 0) {
+          displayToast("No content to process");
+          return;
+        }
+        
+        await axiosInstance.post(`/cognitions/${cognition.id}/bulk_create_nodes/`, {
+          paragraphs
+        });
       }
-      
-      // Step 2: Intelligently split text into meaningful nodes
-      let paragraphs = splitIntoNodes(processedText);
-      
-      console.log('Paragraph split result:', { 
-        originalLength: processedText.length,
-        paragraphCount: paragraphs.length,
-        firstFew: paragraphs.slice(0, 3).map(p => p.substring(0, 50) + '...')
-      });
-      
-      if (paragraphs.length === 0) {
-        displayToast("No content to process");
-        return;
-      }
-      
-      // Step 3: Create nodes with the processed content
-      displayToast(`Creating ${paragraphs.length} nodes...`);
-      await axiosInstance.post(`/cognitions/${cognition.id}/bulk_create_nodes/`, {
-        paragraphs
-      });
       
       await fetchCognition();
       
       setShowPasteModal(false);
       setPasteText('');
-      displayToast(`Added ${paragraphs.length} nodes successfully`);
+      displayToast("Content processed and nodes created successfully");
       
-      // Auto-analyze after adding content (for authors)
-      if (isOwner) {
-        setAnalysisAttempted(false); // Reset flag to allow analysis of new content
-        setTimeout(() => {
-          autoAnalyzeContent();
-        }, 1000);
-      }
     } catch (err) {
       console.error('Process paste error:', err);
       const errorMsg = err.response?.data?.error || "Failed to process pasted text";
@@ -929,8 +971,222 @@ function ReadingMode() {
     }
   };
 
-  const handleTimelineClick = (index) => {
-    scrollToNode(index);
+  const handleTimelineClick = (index, event) => {
+    if (event.ctrlKey || event.metaKey) {
+      // Multi-select mode
+      const newSelected = new Set(selectedNodes);
+      if (newSelected.has(index)) {
+        newSelected.delete(index);
+      } else {
+        newSelected.add(index);
+      }
+      setSelectedNodes(newSelected);
+    } else if (event.shiftKey && selectedNodes.size > 0) {
+      // Range select
+      const lastSelected = Math.max(...selectedNodes);
+      const start = Math.min(lastSelected, index);
+      const end = Math.max(lastSelected, index);
+      const newSelected = new Set();
+      for (let i = start; i <= end; i++) {
+        newSelected.add(i);
+      }
+      setSelectedNodes(newSelected);
+    } else {
+      // Single select or navigation
+      if (selectedNodes.size > 0) {
+        setSelectedNodes(new Set());
+      } else {
+        scrollToNode(index);
+      }
+    }
+  };
+
+  // Drag and drop handlers
+  const handleDragStart = (e, nodeIndex) => {
+    if (!isOwner) return;
+    setDraggedNode(nodeIndex);
+    setIsDragMode(true);
+    e.dataTransfer.effectAllowed = 'move';
+    e.dataTransfer.setData('text/html', nodeIndex.toString());
+  };
+
+  const handleDragOver = (e, nodeIndex) => {
+    if (!isOwner || !isDragMode) return;
+    e.preventDefault();
+    e.dataTransfer.dropEffect = 'move';
+    setDragOverIndex(nodeIndex);
+  };
+
+  const handleDragLeave = (e) => {
+    e.preventDefault();
+    setDragOverIndex(null);
+  };
+
+  const handleDrop = async (e, dropIndex) => {
+    if (!isOwner || !isDragMode || draggedNode === null) return;
+    e.preventDefault();
+    
+    const dragIndex = draggedNode;
+    setDraggedNode(null);
+    setIsDragMode(false);
+    setDragOverIndex(null);
+    
+    if (dragIndex === dropIndex) return;
+    
+    try {
+      const nodeToMove = nodes[dragIndex];
+      await axiosInstance.post(`/nodes/${nodeToMove.id}/reorder_position/`, {
+        new_position: dropIndex
+      });
+      
+      await fetchCognition();
+      
+      // Update current node index if needed
+      if (currentNodeIndex === dragIndex) {
+        setCurrentNodeIndex(dropIndex);
+      } else if (dragIndex < currentNodeIndex && dropIndex >= currentNodeIndex) {
+        setCurrentNodeIndex(currentNodeIndex - 1);
+      } else if (dragIndex > currentNodeIndex && dropIndex <= currentNodeIndex) {
+        setCurrentNodeIndex(currentNodeIndex + 1);
+      }
+      
+      displayToast(`Node moved from position ${dragIndex + 1} to ${dropIndex + 1}`);
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Failed to reorder node';
+      setError(errorMsg);
+    }
+  };
+
+  const handleDragEnd = () => {
+    setDraggedNode(null);
+    setIsDragMode(false);
+    setDragOverIndex(null);
+  };
+
+  // Multi-select merge handler
+  const handleMergeSelected = async () => {
+    if (selectedNodes.size < 2) {
+      displayToast('Select at least 2 nodes to merge');
+      return;
+    }
+    
+    const selectedIndices = Array.from(selectedNodes).sort((a, b) => a - b);
+    const selectedNodeIds = selectedIndices.map(index => nodes[index].id);
+    
+    if (!window.confirm(`Merge ${selectedNodes.size} selected nodes into one?`)) {
+      return;
+    }
+    
+    try {
+      // Merge all selected nodes by repeatedly merging with next
+      const firstNodeIndex = selectedIndices[0];
+      const firstNode = nodes[firstNodeIndex];
+      
+      // Merge from right to left to maintain positions
+      for (let i = selectedIndices.length - 1; i > 0; i--) {
+        const currentIndex = selectedIndices[i];
+        const prevIndex = selectedIndices[i - 1];
+        const currentNode = nodes[currentIndex];
+        const prevNode = nodes[prevIndex];
+        
+        await axiosInstance.post(`/nodes/${prevNode.id}/merge_with_next/`, {
+          separator: '\n\n'
+        });
+      }
+      
+      await fetchCognition();
+      setSelectedNodes(new Set());
+      setCurrentNodeIndex(firstNodeIndex);
+      
+      displayToast(`Successfully merged ${selectedIndices.length} nodes`);
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Failed to merge nodes';
+      setError(errorMsg);
+    }
+  };
+
+  // Multi-select delete handler
+  const handleDeleteSelected = async () => {
+    if (selectedNodes.size === 0) {
+      displayToast('No nodes selected for deletion');
+      return;
+    }
+    
+    const selectedIndices = Array.from(selectedNodes).sort((a, b) => b - a); // Reverse sort for deletion
+    const nodeCount = selectedNodes.size;
+    
+    if (!window.confirm(`Delete ${nodeCount} selected node${nodeCount > 1 ? 's' : ''}? This action cannot be undone.`)) {
+      return;
+    }
+    
+    try {
+      // Delete nodes from highest index to lowest to maintain correct indices
+      for (const nodeIndex of selectedIndices) {
+        const nodeToDelete = nodes[nodeIndex];
+        await axiosInstance.delete(`/nodes/${nodeToDelete.id}/`);
+      }
+      
+      await fetchCognition();
+      setSelectedNodes(new Set());
+      
+      // Update current node index after deletions
+      const lowestDeletedIndex = Math.min(...Array.from(selectedNodes));
+      const newNodeCount = nodes.length - nodeCount;
+      
+      if (newNodeCount === 0) {
+        setCurrentNodeIndex(0);
+      } else if (currentNodeIndex >= lowestDeletedIndex) {
+        // Current node was at or after the deleted range
+        const deletionsBeforeCurrent = Array.from(selectedNodes).filter(idx => idx <= currentNodeIndex).length;
+        const newIndex = Math.max(0, Math.min(currentNodeIndex - deletionsBeforeCurrent, newNodeCount - 1));
+        setCurrentNodeIndex(newIndex);
+      }
+      
+      displayToast(`Successfully deleted ${nodeCount} node${nodeCount > 1 ? 's' : ''}`);
+    } catch (err) {
+      const errorMsg = err.response?.data?.error || 'Failed to delete nodes';
+      setError(errorMsg);
+    }
+  };
+
+  // Inline editing handlers
+  const handleStartInlineEdit = (nodeIndex) => {
+    if (!isOwner) return;
+    const node = nodes[nodeIndex];
+    setInlineEditingNode(nodeIndex);
+    setInlineEditContent(node.content);
+  };
+
+  const handleSaveInlineEdit = async () => {
+    if (inlineEditingNode === null) return;
+    
+    try {
+      const node = nodes[inlineEditingNode];
+      await axiosInstance.patch(`/nodes/${node.id}/`, { 
+        content: inlineEditContent 
+      });
+      
+      // Update local state
+      setNodes(prev => prev.map((n, idx) => 
+        idx === inlineEditingNode ? { ...n, content: inlineEditContent } : n
+      ));
+      
+      setInlineEditingNode(null);
+      setInlineEditContent('');
+      displayToast('Node updated');
+    } catch (err) {
+      setError('Failed to update node');
+    }
+  };
+
+  const handleCancelInlineEdit = () => {
+    setInlineEditingNode(null);
+    setInlineEditContent('');
+  };
+
+  // Clear selections when clicking outside
+  const handleClearSelections = () => {
+    setSelectedNodes(new Set());
   };
 
   // Synthesis handlers removed - functionality consolidated into widgets
@@ -961,15 +1217,7 @@ function ReadingMode() {
   // Initial load
   useEffect(() => {
     fetchCognition();
-    setAnalysisAttempted(false); // Reset analysis flag for new cognition
   }, [fetchCognition, id]);
-
-  // Auto-analyze content when cognition is loaded (for authors) - only once per cognition
-  useEffect(() => {
-    if (cognition && isOwner && !isAnalyzing && !cognition.analysis && !analysisAttempted) {
-      autoAnalyzeContent();
-    }
-  }, [cognition?.id, isOwner, isAnalyzing, analysisAttempted]); // Only depend on cognition ID, not the whole object
 
   // Synthesis update effect removed - functionality consolidated into widgets
 
@@ -981,16 +1229,40 @@ function ReadingMode() {
   // Keyboard navigation
   useEffect(() => {
     const handleKeyDown = (e) => {
-      if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' || isTransitioning) return;
+      if (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' || isTransitioning || inlineEditingNode !== null) return;
       
       switch (e.key) {
         case 'ArrowUp':
           e.preventDefault();
-          goToPreviousNode();
+          if (e.shiftKey && selectedNodes.size > 0) {
+            // Extend selection up
+            const maxSelected = Math.max(...selectedNodes);
+            if (maxSelected > 0) {
+              setSelectedNodes(prev => new Set([...prev, maxSelected - 1]));
+            }
+          } else if (e.ctrlKey || e.metaKey) {
+            // Multi-select current node and go up
+            setSelectedNodes(prev => new Set([...prev, currentNodeIndex]));
+            goToPreviousNode();
+          } else {
+            goToPreviousNode();
+          }
           break;
         case 'ArrowDown':
           e.preventDefault();
-          goToNextNode();
+          if (e.shiftKey && selectedNodes.size > 0) {
+            // Extend selection down
+            const maxSelected = Math.max(...selectedNodes);
+            if (maxSelected < nodes.length - 1) {
+              setSelectedNodes(prev => new Set([...prev, maxSelected + 1]));
+            }
+          } else if (e.ctrlKey || e.metaKey) {
+            // Multi-select current node and go down
+            setSelectedNodes(prev => new Set([...prev, currentNodeIndex]));
+            goToNextNode();
+          } else {
+            goToNextNode();
+          }
           break;
         case 'ArrowLeft':
           goToPreviousNode();
@@ -999,7 +1271,20 @@ function ReadingMode() {
           goToNextNode();
           break;
         case 'e':
-          if (!isTransitioning) setIsEditMode(prev => !prev);
+          if (!isTransitioning) {
+            if (e.altKey && isOwner) {
+              // Alt+E for inline edit
+              handleStartInlineEdit(currentNodeIndex);
+            } else {
+              setIsEditMode(prev => !prev);
+            }
+          }
+          break;
+        case 'Enter':
+          if (isOwner && currentNode && currentNode.node_type !== 'toc') {
+            e.preventDefault();
+            handleStartInlineEdit(currentNodeIndex);
+          }
           break;
         case 'h':
           navigate('/');
@@ -1010,7 +1295,39 @@ function ReadingMode() {
             handleStarNode(currentNode.id);
           }
           break;
-        // Escape key handler for synthesis removed - functionality consolidated into widgets
+        case 'm':
+          if (isOwner && selectedNodes.size >= 2) {
+            e.preventDefault();
+            handleMergeSelected();
+          }
+          break;
+        case 'Delete':
+        case 'Backspace':
+          if (isOwner && selectedNodes.size > 0) {
+            e.preventDefault();
+            handleDeleteSelected();
+          }
+          break;
+        case 'Escape':
+          if (selectedNodes.size > 0) {
+            setSelectedNodes(new Set());
+          } else if (inlineEditingNode !== null) {
+            handleCancelInlineEdit();
+          }
+          break;
+        case ' ':
+          // Spacebar to select/deselect current node
+          if (isOwner) {
+            e.preventDefault();
+            const newSelected = new Set(selectedNodes);
+            if (newSelected.has(currentNodeIndex)) {
+              newSelected.delete(currentNodeIndex);
+            } else {
+              newSelected.add(currentNodeIndex);
+            }
+            setSelectedNodes(newSelected);
+          }
+          break;
         default:
           break;
       }
@@ -1020,7 +1337,7 @@ function ReadingMode() {
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
     };
-  }, [currentNodeIndex, nodes.length, navigate, isTransitioning, isOwner, currentNode]);
+  }, [currentNodeIndex, nodes.length, navigate, isTransitioning, isOwner, currentNode, selectedNodes, inlineEditingNode, handleMergeSelected, handleDeleteSelected, handleStartInlineEdit, handleStarNode, goToNextNode, goToPreviousNode]);
 
   // Loading states
   if (isLoading) {
@@ -1121,23 +1438,35 @@ function ReadingMode() {
         </div>
         
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          {/* Analysis indicator for authors */}
-          {isOwner && isAnalyzing && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              padding: '0.5rem 0.75rem',
-              background: 'var(--hover-color)',
-              borderRadius: '4px',
-              fontSize: '0.9rem',
-              color: 'var(--secondary-color)'
-            }}>
-              <FaCog className="spinning" />
-              Analyzing...
+          
+          {/* Keyboard Shortcuts Help */}
+          {isOwner && (
+            <div 
+              style={{
+                background: 'rgba(var(--accent-color-rgb), 0.1)',
+                border: '1px solid var(--border-color)',
+                borderRadius: '4px',
+                padding: '0.25rem 0.5rem',
+                fontSize: '0.7rem',
+                color: 'var(--secondary-color)',
+                cursor: 'help'
+              }}
+              title="Keyboard Shortcuts:
+• Arrow Keys: Navigate
+• Ctrl/Cmd + Click: Multi-select
+• Shift + Click: Range select
+• Space: Toggle selection
+• Enter/Double-click: Inline edit
+• M: Merge selected (2+ nodes)
+• Delete/Backspace: Delete selected
+• Escape: Clear selection
+• Alt+E: Quick edit
+• S: Star node"
+            >
+              Shortcuts (?)
             </div>
           )}
-          
+
           {/* Semantic Analysis Panel Toggle - visible to all if analysis exists */}
           {cognition?.analysis && (
             <button 
@@ -1234,41 +1563,85 @@ function ReadingMode() {
         height: `${availableHeight}px`
       }}>
         {/* Vertical Timeline */}
-        <div style={{
-          width: '12px',
-          backgroundColor: 'var(--border-color)',
-          position: 'relative',
-          cursor: 'pointer',
-          flexShrink: 0,
-          zIndex: 40,
-          height: '100%'
-        }}>
+        <div 
+          style={{
+            width: '12px',
+            backgroundColor: 'var(--border-color)',
+            position: 'relative',
+            cursor: 'pointer',
+            flexShrink: 0,
+            zIndex: 40,
+            height: '100%'
+          }}
+          onClick={handleClearSelections}
+        >
           {nodes.map((node, index) => {
-            // Calculate proportional height based on character count
-            const totalChars = nodes.reduce((sum, n) => sum + (n.content?.length || 0), 0);
-            const nodeChars = node.content?.length || 0;
-            const heightPercent = totalChars > 0 ? (nodeChars / totalChars) * 100 : (100 / nodes.length);
+            // TOC nodes get fixed height, content nodes get proportional height
+            let heightPercent;
+            if (node.node_type === 'toc') {
+              heightPercent = 8; // Fixed 8% height for TOC nodes
+            } else {
+              // Calculate proportional height for content nodes only
+              const contentNodes = nodes.filter(n => n.node_type !== 'toc');
+              const totalChars = contentNodes.reduce((sum, n) => sum + (n.content?.length || 0), 0);
+              const nodeChars = node.content?.length || 0;
+              const availablePercent = 92; // Remaining space after TOC
+              heightPercent = totalChars > 0 ? (nodeChars / totalChars) * availablePercent : (availablePercent / contentNodes.length);
+            }
+
+            const isSelected = selectedNodes.has(index);
+            const isDraggedOver = dragOverIndex === index;
+            const isBeingDragged = draggedNode === index;
             
             return (
               <div
                 key={node.id}
-                onClick={() => handleTimelineClick(index)}
+                draggable={isOwner && node.node_type !== 'toc'}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  handleTimelineClick(index, e);
+                }}
+                onDragStart={(e) => handleDragStart(e, index)}
+                onDragOver={(e) => handleDragOver(e, index)}
+                onDragLeave={handleDragLeave}
+                onDrop={(e) => handleDrop(e, index)}
+                onDragEnd={handleDragEnd}
                 style={{
                   height: `${heightPercent}%`,
-                  transition: 'all 0.2s',
-                  minHeight: '3px',
-                  opacity: isTransitioning ? 0.7 : 1,
-                  cursor: isTransitioning ? 'not-allowed' : 'pointer',
+                  transition: isBeingDragged ? 'none' : 'all 0.2s',
+                  minHeight: node.node_type === 'toc' ? '20px' : '8px',
+                  maxHeight: node.node_type === 'toc' ? '40px' : 'none',
+                  opacity: isTransitioning ? 0.7 : (isBeingDragged ? 0.5 : 1),
+                  cursor: isTransitioning ? 'not-allowed' : (isOwner && node.node_type !== 'toc' ? 'grab' : 'pointer'),
                   position: 'relative',
                   display: 'flex',
                   alignItems: 'flex-end',
                   justifyContent: 'center',
                   overflow: 'hidden',
-                  boxSizing: 'border-box'
+                  boxSizing: 'border-box',
+                  border: isSelected ? '2px solid #ff6b35' : 'none',
+                  transform: isDraggedOver ? 'scale(1.1)' : 'scale(1)',
+                  zIndex: isBeingDragged ? 50 : 'auto'
                 }}
               >
-                {/* Blue background for current node */}
-                {index === currentNodeIndex && (
+                {/* Special background for TOC nodes */}
+                {node.node_type === 'toc' && (
+                  <div style={{
+                    position: 'absolute',
+                    top: 0,
+                    left: 0,
+                    right: 0,
+                    bottom: 0,
+                    background: index === currentNodeIndex 
+                      ? 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)'
+                      : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                    opacity: index === currentNodeIndex ? 1 : 0.7,
+                    zIndex: 1
+                  }} />
+                )}
+                
+                {/* Blue background for current regular node */}
+                {index === currentNodeIndex && node.node_type !== 'toc' && (
                   <div style={{
                     position: 'absolute',
                     top: 0,
@@ -1281,7 +1654,7 @@ function ReadingMode() {
                 )}
                 
                 {/* Golden background for starred nodes */}
-                {node.is_illuminated && index !== currentNodeIndex && (
+                {node.is_illuminated && index !== currentNodeIndex && node.node_type !== 'toc' && (
                   <div style={{
                     position: 'absolute',
                     top: 0,
@@ -1293,16 +1666,28 @@ function ReadingMode() {
                   }} />
                 )}
                 
-                {/* Horizontal line indicators for node length */}
-                <div style={{
-                  width: '90%',
-                  height: '2px',
-                  backgroundColor: index === currentNodeIndex ? 'white' : 'var(--secondary-color)',
-                  opacity: 0.9,
-                  borderRadius: '1px',
-                  position: 'relative',
-                  zIndex: 2
-                }} />
+                {/* Indicator for node type */}
+                {node.node_type === 'toc' ? (
+                  <div style={{
+                    width: '8px',
+                    height: '8px',
+                    backgroundColor: index === currentNodeIndex ? 'white' : '#667eea',
+                    borderRadius: '50%',
+                    position: 'relative',
+                    zIndex: 2,
+                    border: '1px solid white'
+                  }} />
+                ) : (
+                  <div style={{
+                    width: '90%',
+                    height: '2px',
+                    backgroundColor: index === currentNodeIndex ? 'white' : 'var(--secondary-color)',
+                    opacity: 0.9,
+                    borderRadius: '1px',
+                    position: 'relative',
+                    zIndex: 2
+                  }} />
+                )}
               </div>
             );
           })}
@@ -1358,8 +1743,65 @@ function ReadingMode() {
                   justifyContent: 'center',
                   boxSizing: 'border-box'
                 }}>
-                  {/* Node content - editable in edit mode */}
-                  {isEditMode && index === currentNodeIndex ? (
+                  {/* Node content - inline editable or regular view */}
+                  {inlineEditingNode === index ? (
+                    <div style={{ marginBottom: '1.5rem' }}>
+                      <textarea
+                        value={inlineEditContent}
+                        onChange={(e) => setInlineEditContent(e.target.value)}
+                        style={{
+                          width: '100%',
+                          minHeight: '200px',
+                          maxHeight: '60vh',
+                          fontSize: '1.4rem',
+                          lineHeight: '1.6',
+                          color: 'var(--primary-color)',
+                          backgroundColor: 'var(--input-background)',
+                          border: '2px solid var(--accent-color)',
+                          borderRadius: '8px',
+                          padding: '1rem',
+                          marginBottom: '1rem',
+                          resize: 'vertical',
+                          outline: 'none',
+                          fontFamily: 'inherit',
+                          overflowY: 'auto',
+                          boxSizing: 'border-box'
+                        }}
+                        placeholder="Edit node content..."
+                        autoFocus
+                      />
+                      <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
+                        <button
+                          onClick={handleSaveInlineEdit}
+                          style={{
+                            background: 'var(--success-color)',
+                            color: 'white',
+                            border: 'none',
+                            padding: '0.5rem 1rem',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontWeight: '500'
+                          }}
+                        >
+                          Save
+                        </button>
+                        <button
+                          onClick={handleCancelInlineEdit}
+                          style={{
+                            background: 'var(--secondary-color)',
+                            color: 'white',
+                            border: 'none',
+                            padding: '0.5rem 1rem',
+                            borderRadius: '4px',
+                            cursor: 'pointer',
+                            fontWeight: '500'
+                          }}
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : isEditMode && index === currentNodeIndex ? (
                     <textarea
                       ref={textareaRef}
                       value={nodeText}
@@ -1388,22 +1830,53 @@ function ReadingMode() {
                       }}
                       placeholder="Edit node content..."
                     />
-                  ) : (
-                    <MarkdownRenderer 
-                      content={node.content}
-                      className="markdown-content"
-                      style={{
-                        fontSize: '1.4rem',
-                        lineHeight: '1.6',
-                        textAlign: 'left',
-                        marginBottom: '1.5rem',
-                        color: 'var(--primary-color)' // Ensure proper text color
-                      }}
+                  ) : node.node_type === 'toc' ? (
+                    <TOCContainer
+                      cognition={cognition}
+                      isOwner={isOwner}
+                      onNavigateToNode={handleTOCNavigation}
+                      onRegenerateTOC={handleTOCRegeneration}
                     />
+                  ) : (
+                    <div 
+                      style={{ position: 'relative' }}
+                      onDoubleClick={() => isOwner && handleStartInlineEdit(index)}
+                    >
+                      <MarkdownRenderer 
+                        content={node.content}
+                        className="markdown-content"
+                        style={{
+                          fontSize: '1.4rem',
+                          lineHeight: '1.6',
+                          textAlign: 'left',
+                          marginBottom: '1.5rem',
+                          color: 'var(--primary-color)',
+                          cursor: isOwner ? 'text' : 'default'
+                        }}
+                      />
+                      {isOwner && index === currentNodeIndex && (
+                        <div 
+                          style={{
+                            position: 'absolute',
+                            top: '8px',
+                            right: '8px',
+                            background: 'rgba(0,0,0,0.7)',
+                            color: 'white',
+                            padding: '4px 8px',
+                            borderRadius: '4px',
+                            fontSize: '0.8rem',
+                            opacity: 0.7,
+                            pointerEvents: 'none'
+                          }}
+                        >
+                          Double-click to edit
+                        </div>
+                      )}
+                    </div>
                   )}
                   
-                  {/* Widgets display for current node */}
-                  {index === currentNodeIndex && node.widgets && node.widgets.length > 0 && (
+                  {/* Widgets display for current node - NOT for TOC nodes */}
+                  {index === currentNodeIndex && node.node_type !== 'toc' && node.widgets && node.widgets.length > 0 && (
                     <div 
                       className="widget-container"
                       style={{
@@ -1444,8 +1917,8 @@ function ReadingMode() {
                     </div>
                   )}
                   
-                  {/* Widget Creator for current node */}
-                  {index === currentNodeIndex && isOwner && (
+                  {/* Widget Creator for current node - NOT for TOC nodes */}
+                  {index === currentNodeIndex && node.node_type !== 'toc' && isOwner && (
                     <div style={{ marginBottom: '1rem' }}>
                       <WidgetCreator
                         nodeId={node.id}
@@ -1485,6 +1958,73 @@ function ReadingMode() {
           padding: '1rem',
           zIndex: 20
         }}>
+          {/* Multi-select toolbar */}
+          {selectedNodes.size > 0 && (
+            <div style={{
+              background: 'var(--accent-color)',
+              color: 'white',
+              padding: '0.75rem 1rem',
+              borderRadius: '6px',
+              marginBottom: '1rem',
+              display: 'flex',
+              justifyContent: 'space-between',
+              alignItems: 'center'
+            }}>
+              <span style={{ fontWeight: '500' }}>
+                {selectedNodes.size} node{selectedNodes.size > 1 ? 's' : ''} selected
+              </span>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                {selectedNodes.size >= 2 && (
+                  <button
+                    onClick={handleMergeSelected}
+                    style={{
+                      background: 'white',
+                      color: 'var(--accent-color)',
+                      border: 'none',
+                      padding: '0.5rem 1rem',
+                      borderRadius: '4px',
+                      cursor: 'pointer',
+                      fontWeight: '500',
+                      fontSize: '0.9rem'
+                    }}
+                  >
+                    Merge Selected
+                  </button>
+                )}
+                <button
+                  onClick={handleDeleteSelected}
+                  style={{
+                    background: '#dc3545',
+                    color: 'white',
+                    border: 'none',
+                    padding: '0.5rem 1rem',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: '500',
+                    fontSize: '0.9rem'
+                  }}
+                >
+                  Delete Selected
+                </button>
+                <button
+                  onClick={() => setSelectedNodes(new Set())}
+                  style={{
+                    background: 'rgba(255,255,255,0.2)',
+                    color: 'white',
+                    border: '1px solid rgba(255,255,255,0.3)',
+                    padding: '0.5rem 1rem',
+                    borderRadius: '4px',
+                    cursor: 'pointer',
+                    fontWeight: '500',
+                    fontSize: '0.9rem'
+                  }}
+                >
+                  Clear Selection
+                </button>
+              </div>
+            </div>
+          )}
+
           <div style={{
             maxWidth: '800px',
             margin: '0 auto',
@@ -1727,6 +2267,39 @@ function ReadingMode() {
                 color: 'var(--secondary-color)',
                 marginRight: '0.5rem'
               }}>Tools:</span>
+            
+            <button 
+              onClick={handleTOCGeneration}
+              disabled={isGeneratingTOC}
+              style={{
+                width: '40px',
+                height: '40px',
+                backgroundColor: isGeneratingTOC ? 'var(--hover-color)' : 'var(--accent-color)',
+                color: 'white',
+                border: 'none',
+                borderRadius: '4px',
+                fontSize: '1rem',
+                cursor: isGeneratingTOC ? 'not-allowed' : 'pointer',
+                opacity: isGeneratingTOC ? 0.6 : 1,
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                transition: 'all 0.2s ease'
+              }}
+              onMouseEnter={(e) => {
+                if (!isGeneratingTOC) {
+                  e.target.style.backgroundColor = '#4a8cef';
+                }
+              }}
+              onMouseLeave={(e) => {
+                if (!isGeneratingTOC) {
+                  e.target.style.backgroundColor = 'var(--accent-color)';
+                }
+              }}
+              title={isGeneratingTOC ? "Generating TOC..." : "Generate Table of Contents"}
+            >
+              <FaBookOpen />
+            </button>
             
             <button 
               onClick={() => handleStarNode(currentNode?.id)}

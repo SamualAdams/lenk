@@ -168,9 +168,56 @@ class CognitionViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=['post'])
     def process_text(self, request, pk=None):
+        """Process text with AI semantic segmentation first, fallback to manual splitting"""
         cognition = self.get_object()
+        
+        if not cognition.raw_content.strip():
+            return Response(
+                {'error': 'Cannot process empty content'},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Try AI semantic segmentation first for substantial text
+        if len(cognition.raw_content) > 200:
+            try:
+                print(f"Attempting AI segmentation for cognition {cognition.id}")
+                
+                # Use semantic service for intelligent segmentation
+                result, processing_time = semantic_service.quick_segmentation(
+                    cognition.raw_content,
+                    max_segments=20
+                )
+                
+                with transaction.atomic():
+                    # Delete existing nodes
+                    cognition.nodes.all().delete()
+                    
+                    # Create nodes from AI segments
+                    for i, segment in enumerate(result.segments):
+                        content = cognition.raw_content[segment.start_position:segment.end_position]
+                        Node.objects.create(
+                            cognition=cognition,
+                            content=content.strip(),
+                            position=i,
+                            character_count=len(content)
+                        )
+                
+                return Response({
+                    'status': 'success',
+                    'method': 'ai_segmentation',
+                    'nodes_created': len(result.segments),
+                    'document_type': result.document_type.value,
+                    'processing_time_ms': processing_time
+                })
+                
+            except (SemanticAnalysisError, Exception) as e:
+                print(f"AI segmentation failed for cognition {cognition.id}: {str(e)}")
+                # Continue to fallback method below
+        
+        # Fallback to manual paragraph splitting
+        print(f"Using fallback paragraph splitting for cognition {cognition.id}")
         text = cognition.raw_content
-
+        
         # Clean up text first - normalize line breaks
         text = re.sub(r'\r\n', '\n', text)  # Windows line endings
         text = re.sub(r'\r', '\n', text)    # Mac line endings
@@ -256,6 +303,7 @@ class CognitionViewSet(viewsets.ModelViewSet):
 
         return Response({
             'status': 'success',
+            'method': 'fallback_splitting',
             'nodes_created': created_count
         })
     
@@ -404,6 +452,45 @@ class CognitionViewSet(viewsets.ModelViewSet):
                 status=status.HTTP_500_INTERNAL_SERVER_ERROR
             )
 
+    @action(detail=True, methods=['post'])
+    def generate_toc(self, request, pk=None):
+        """
+        Generate a Table of Contents for this cognition using AI analysis.
+        """
+        from .toc_processor import toc_processor
+        
+        cognition = self.get_object()
+        
+        # Check permissions
+        if cognition.user != request.user:
+            return Response(
+                {'error': 'You do not have permission to generate TOC for this cognition'},
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            # Check if regeneration is requested
+            regenerate = request.data.get('regenerate', False)
+            
+            if regenerate:
+                result = toc_processor.regenerate_toc_for_cognition(cognition)
+            else:
+                result = toc_processor.generate_toc_for_cognition(cognition)
+            
+            return Response(result)
+            
+        except ValueError as e:
+            return Response(
+                {'error': str(e)},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        except Exception as e:
+            print(f"TOC generation error: {str(e)}")
+            return Response(
+                {'error': f'Failed to generate TOC: {str(e)}'},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
     @action(detail=False, methods=['get'])
     def collective(self, request):
         print(f"Collective endpoint called by user: {request.user.username}")
@@ -536,6 +623,193 @@ class NodeViewSet(viewsets.ModelViewSet):
         node.save()
         return Response({'status': 'success', 'is_illuminated': node.is_illuminated})
 
+    @action(detail=True, methods=['post'])
+    def merge_with_next(self, request, pk=None):
+        """Merge this node with the next node"""
+        node = self.get_object()
+        
+        # Check permissions
+        if node.cognition.user != request.user:
+            return Response(
+                {'error': 'You do not have permission to edit this node'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Find the next node
+        try:
+            next_node = Node.objects.get(
+                cognition=node.cognition,
+                position=node.position + 1
+            )
+        except Node.DoesNotExist:
+            return Response(
+                {'error': 'No next node to merge with'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get separator from request data
+        separator = request.data.get('separator', ' ')
+        
+        with transaction.atomic():
+            # Merge content
+            merged_content = node.content + separator + next_node.content
+            node.content = merged_content
+            node.character_count = len(merged_content)
+            node.save()
+            
+            # Get nodes that need to be shifted
+            nodes_to_shift = Node.objects.filter(
+                cognition=node.cognition,
+                position__gt=next_node.position
+            ).order_by('position')
+            
+            # Delete the next node
+            next_node.delete()
+            
+            # Shift subsequent nodes
+            for shift_node in nodes_to_shift:
+                shift_node.position = shift_node.position - 1
+                shift_node.save()
+        
+        return Response({
+            'status': 'success',
+            'merged_content': merged_content,
+            'message': 'Nodes merged successfully'
+        })
+
+    @action(detail=True, methods=['post'])
+    def split_node(self, request, pk=None):
+        """Split a node at a specified position"""
+        node = self.get_object()
+        
+        # Check permissions
+        if node.cognition.user != request.user:
+            return Response(
+                {'error': 'You do not have permission to edit this node'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        split_position = request.data.get('split_position')
+        if split_position is None:
+            return Response(
+                {'error': 'split_position is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        content = node.content
+        if split_position < 0 or split_position >= len(content):
+            return Response(
+                {'error': 'Invalid split position'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        before_content = content[:split_position].strip()
+        after_content = content[split_position:].strip()
+        
+        if not before_content or not after_content:
+            return Response(
+                {'error': 'Split would create empty node'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        with transaction.atomic():
+            # Update current node with first part
+            node.content = before_content
+            node.character_count = len(before_content)
+            node.save()
+            
+            # Shift all subsequent nodes forward
+            nodes_to_shift = Node.objects.filter(
+                cognition=node.cognition,
+                position__gt=node.position
+            ).order_by('-position')  # Reverse order to avoid conflicts
+            
+            for shift_node in nodes_to_shift:
+                shift_node.position = shift_node.position + 1
+                shift_node.save()
+            
+            # Create new node with second part
+            new_node = Node.objects.create(
+                cognition=node.cognition,
+                content=after_content,
+                position=node.position + 1,
+                character_count=len(after_content),
+                is_illuminated=False
+            )
+        
+        return Response({
+            'status': 'success',
+            'original_node': NodeSerializer(node).data,
+            'new_node': NodeSerializer(new_node).data,
+            'message': 'Node split successfully'
+        })
+
+    @action(detail=True, methods=['post'])
+    def reorder_position(self, request, pk=None):
+        """Move a node to a new position"""
+        node = self.get_object()
+        
+        # Check permissions
+        if node.cognition.user != request.user:
+            return Response(
+                {'error': 'You do not have permission to edit this node'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        new_position = request.data.get('new_position')
+        if new_position is None:
+            return Response(
+                {'error': 'new_position is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Get total node count for validation
+        total_nodes = Node.objects.filter(cognition=node.cognition).count()
+        if new_position < 0 or new_position >= total_nodes:
+            return Response(
+                {'error': f'Invalid position. Must be between 0 and {total_nodes - 1}'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        old_position = node.position
+        if old_position == new_position:
+            return Response({'status': 'success', 'message': 'Node already at target position'})
+        
+        with transaction.atomic():
+            if new_position > old_position:
+                # Moving down: shift nodes between old and new position up
+                nodes_to_shift = Node.objects.filter(
+                    cognition=node.cognition,
+                    position__gt=old_position,
+                    position__lte=new_position
+                ).order_by('position')
+                
+                for shift_node in nodes_to_shift:
+                    shift_node.position = shift_node.position - 1
+                    shift_node.save()
+            else:
+                # Moving up: shift nodes between new and old position down
+                nodes_to_shift = Node.objects.filter(
+                    cognition=node.cognition,
+                    position__gte=new_position,
+                    position__lt=old_position
+                ).order_by('-position')
+                
+                for shift_node in nodes_to_shift:
+                    shift_node.position = shift_node.position + 1
+                    shift_node.save()
+            
+            # Update the node's position
+            node.position = new_position
+            node.save()
+        
+        return Response({
+            'status': 'success',
+            'old_position': old_position,
+            'new_position': new_position,
+            'message': f'Node moved from position {old_position} to {new_position}'
+        })
+
 
 class PresetResponseViewSet(viewsets.ModelViewSet):
     queryset = PresetResponse.objects.all().order_by('category', 'title')
@@ -614,6 +888,113 @@ class WidgetViewSet(viewsets.ModelViewSet):
         )
         
         return Response(WidgetInteractionSerializer(interaction).data)
+
+    @action(detail=False, methods=['post'])
+    def create_llm_widget(self, request):
+        """Create a widget using LLM generation"""
+        import openai
+        import os
+        
+        node_id = request.data.get('node_id')
+        llm_preset = request.data.get('llm_preset')
+        custom_prompt = request.data.get('custom_prompt', '')
+        widget_type = request.data.get('widget_type')
+        
+        if not node_id:
+            return Response(
+                {'error': 'node_id is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not widget_type:
+            return Response(
+                {'error': 'widget_type is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            node = Node.objects.get(id=node_id)
+        except Node.DoesNotExist:
+            return Response(
+                {'error': 'Node not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Check permissions
+        if widget_type.startswith('author_') and node.cognition.user != request.user:
+            return Response(
+                {'error': 'Only the author can create author widgets'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        if widget_type.startswith('reader_') and not (node.cognition.user == request.user or node.cognition.is_public):
+            return Response(
+                {'error': 'Cannot create reader widgets on inaccessible nodes'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        try:
+            # Use OpenAI to generate widget content
+            client = openai.OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
+            
+            # Determine the prompt based on preset and widget type
+            if llm_preset == 'quiz':
+                system_prompt = """You are an expert educator. Create a thoughtful quiz question based on the provided text content. The question should test understanding of key concepts or ideas."""
+                user_prompt = f"Create a quiz question for this content:\n\n{node.content}\n\nCustom instructions: {custom_prompt}"
+            elif llm_preset == 'summary':
+                system_prompt = """You are an expert at creating concise summaries. Create a brief, accurate summary of the provided content."""
+                user_prompt = f"Summarize this content:\n\n{node.content}\n\nCustom instructions: {custom_prompt}"
+            elif llm_preset == 'analysis':
+                system_prompt = """You are an expert analyst. Provide insightful analysis of the provided content, highlighting key themes, implications, or significance."""
+                user_prompt = f"Analyze this content:\n\n{node.content}\n\nCustom instructions: {custom_prompt}"
+            elif llm_preset == 'discussion':
+                system_prompt = """You are a discussion facilitator. Create thought-provoking discussion points or questions to help readers engage deeply with the content."""
+                user_prompt = f"Create discussion points for this content:\n\n{node.content}\n\nCustom instructions: {custom_prompt}"
+            else:
+                # Custom prompt
+                system_prompt = "You are a helpful assistant that creates educational content based on provided text."
+                user_prompt = f"Content: {node.content}\n\nTask: {custom_prompt}"
+            
+            response = client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt}
+                ],
+                temperature=0.7,
+                max_tokens=500
+            )
+            
+            generated_content = response.choices[0].message.content.strip()
+            
+            # Create the widget
+            widget_data = {
+                'node': node.id,
+                'widget_type': widget_type,
+                'user': request.user.id
+            }
+            
+            # Set content based on widget type
+            if 'quiz' in widget_type:
+                widget_data['quiz_question'] = generated_content
+            else:
+                widget_data['content'] = generated_content
+            
+            # Add title if it's a remark widget
+            if 'remark' in widget_type:
+                widget_data['title'] = f"AI-Generated {llm_preset.title()}"
+            
+            serializer = WidgetSerializer(data=widget_data)
+            serializer.is_valid(raise_exception=True)
+            widget = serializer.save(user=request.user)
+            
+            return Response(WidgetSerializer(widget).data, status=status.HTTP_201_CREATED)
+            
+        except Exception as e:
+            return Response(
+                {'error': f'Failed to generate widget: {str(e)}'}, 
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
 
 
 @api_view(['POST'])

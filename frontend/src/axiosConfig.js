@@ -77,6 +77,17 @@ export const convertToMarkdown = async (rawText) => {
   return response.data.markdown_text;
 };
 
+/**
+ * Generate Table of Contents for a cognition using AI analysis.
+ * Returns TOC generation result with node ID and metadata.
+ */
+export const generateTOC = async (cognitionId, regenerate = false) => {
+  const response = await axiosInstance.post(`/cognitions/${cognitionId}/generate_toc/`, {
+    regenerate
+  });
+  return response.data;
+};
+
 export default axiosInstance;
 
 // Special axios instance for registration and login (no credentials/cookies sent)

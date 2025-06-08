@@ -12,6 +12,7 @@ class Cognition(models.Model):
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='cognitions')
     is_public = models.BooleanField(default=False, help_text="Whether this cognition is shared publicly")
     share_date = models.DateTimeField(null=True, blank=True, help_text="When this cognition was shared")
+    table_of_contents = models.JSONField(default=list, help_text="Structured TOC data with sections and navigation")
     
     def __str__(self):
         return self.title
@@ -20,11 +21,17 @@ class Cognition(models.Model):
         return sum(node.character_count for node in self.nodes.all())
 
 class Node(models.Model):
+    NODE_TYPE_CHOICES = [
+        ('content', 'Content'),
+        ('toc', 'Table of Contents'),
+    ]
+    
     cognition = models.ForeignKey(Cognition, related_name='nodes', on_delete=models.CASCADE)
     content = models.TextField()
     position = models.PositiveIntegerField()
     character_count = models.PositiveIntegerField()
     is_illuminated = models.BooleanField(default=False)
+    node_type = models.CharField(max_length=20, choices=NODE_TYPE_CHOICES, default='content')
     created_at = models.DateTimeField(auto_now_add=True)
     
     class Meta:

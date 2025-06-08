@@ -95,7 +95,7 @@ class NodeSerializer(serializers.ModelSerializer):
     class Meta:
         model = Node
         fields = ['id', 'cognition', 'content', 'position', 'character_count',
-                  'is_illuminated', 'created_at', 'widgets']
+                  'is_illuminated', 'node_type', 'created_at', 'widgets']
         read_only_fields = ['widgets', 'id', 'created_at']
     
     # Note: Synthesis functionality has been consolidated into the widget system
@@ -170,11 +170,14 @@ class DocumentAnalysisResultSerializer(serializers.ModelSerializer):
 
 class CognitionSerializer(serializers.ModelSerializer):
     nodes_count = serializers.SerializerMethodField()
+    username = serializers.CharField(source='user.username', read_only=True)
+    user_id = serializers.ReadOnlyField(source='user.id')
     
     class Meta:
         model = Cognition
         fields = ['id', 'title', 'raw_content', 'is_starred', 'created_at',
-                  'updated_at', 'nodes_count']
+                  'updated_at', 'nodes_count', 'table_of_contents', 'is_public',
+                  'username', 'user_id']
     
     def get_nodes_count(self, obj):
         return obj.nodes.count()
@@ -188,7 +191,7 @@ class CognitionDetailSerializer(CognitionSerializer):
     
     class Meta(CognitionSerializer.Meta):
         fields = CognitionSerializer.Meta.fields + [
-            'user_id', 'username', 'nodes', 'analysis', 'has_semantic_analysis'
+            'user_id', 'username', 'nodes', 'analysis', 'has_semantic_analysis', 'table_of_contents'
         ]
     
     def get_has_semantic_analysis(self, obj):
