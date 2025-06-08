@@ -10,6 +10,7 @@ class Cognition(models.Model):
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='cognitions')
+    group = models.ForeignKey('Group', on_delete=models.CASCADE, related_name='cognitions', null=True, blank=True, help_text="Group that owns this cognition")
     is_public = models.BooleanField(default=False, help_text="Whether this cognition is shared publicly")
     share_date = models.DateTimeField(null=True, blank=True, help_text="When this cognition was shared")
     table_of_contents = models.JSONField(default=list, help_text="Structured TOC data with sections and navigation")
@@ -19,6 +20,25 @@ class Cognition(models.Model):
     
     def total_characters(self):
         return sum(node.character_count for node in self.nodes.all())
+    
+    def is_group_cognition(self):
+        """Check if this cognition belongs to a group"""
+        return self.group is not None
+    
+    def can_edit(self, user):
+        """Check if user can edit this cognition"""
+        if self.group:
+            # Group cognitions can be edited by group admins
+            return self.group.is_admin(user)
+        else:
+            # Personal cognitions can only be edited by owner
+            return self.user == user
+    
+    def get_owner_display(self):
+        """Get display name for the owner (user or group)"""
+        if self.group:
+            return self.group.name
+        return self.user.username
 
 class Node(models.Model):
     NODE_TYPE_CHOICES = [
@@ -313,3 +333,96 @@ class SemanticSegment(models.Model):
     @property
     def length(self):
         return self.end_position - self.start_position
+
+
+class Group(models.Model):
+    """Groups allow multiple users to collaborate on cognitions"""
+    name = models.CharField(max_length=100)
+    description = models.TextField(blank=True, help_text="Description of the group's purpose")
+    founder = models.ForeignKey(User, on_delete=models.CASCADE, related_name='founded_groups')
+    created_at = models.DateTimeField(auto_now_add=True)
+    updated_at = models.DateTimeField(auto_now=True)
+    is_public = models.BooleanField(default=True, help_text="Whether group is discoverable and joinable")
+    
+    def __str__(self):
+        return self.name
+    
+    def get_members(self):
+        """Get all members of this group"""
+        return User.objects.filter(group_memberships__group=self)
+    
+    def get_admins(self):
+        """Get all admin members of this group"""
+        return User.objects.filter(group_memberships__group=self, group_memberships__role='admin')
+    
+    def is_member(self, user):
+        """Check if user is a member of this group"""
+        return self.memberships.filter(user=user).exists()
+    
+    def is_admin(self, user):
+        """Check if user is an admin of this group"""
+        return self.memberships.filter(user=user, role='admin').exists()
+    
+    def add_member(self, user, role='member'):
+        """Add a user to the group"""
+        membership, created = GroupMembership.objects.get_or_create(
+            group=self,
+            user=user,
+            defaults={'role': role}
+        )
+        return membership, created
+    
+    def remove_member(self, user):
+        """Remove a user from the group"""
+        self.memberships.filter(user=user).delete()
+    
+    @property
+    def member_count(self):
+        return self.memberships.count()
+    
+    @property
+    def cognition_count(self):
+        return self.cognitions.count()
+
+
+class GroupMembership(models.Model):
+    """Represents a user's membership in a group"""
+    ROLE_CHOICES = [
+        ('member', 'Member'),
+        ('admin', 'Admin'),
+    ]
+    
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name='memberships')
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='group_memberships')
+    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='member')
+    joined_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        unique_together = ['group', 'user']
+    
+    def __str__(self):
+        return f"{self.user.username} - {self.group.name} ({self.role})"
+
+
+class GroupInvitation(models.Model):
+    """Invitations to join a group"""
+    STATUS_CHOICES = [
+        ('pending', 'Pending'),
+        ('accepted', 'Accepted'),
+        ('declined', 'Declined'),
+        ('expired', 'Expired'),
+    ]
+    
+    group = models.ForeignKey(Group, on_delete=models.CASCADE, related_name='invitations')
+    inviter = models.ForeignKey(User, on_delete=models.CASCADE, related_name='sent_invitations')
+    invitee = models.ForeignKey(User, on_delete=models.CASCADE, related_name='received_invitations')
+    message = models.TextField(blank=True, help_text="Optional invitation message")
+    status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending')
+    created_at = models.DateTimeField(auto_now_add=True)
+    responded_at = models.DateTimeField(null=True, blank=True)
+    
+    class Meta:
+        unique_together = ['group', 'invitee']
+    
+    def __str__(self):
+        return f"Invitation to {self.invitee.username} for {self.group.name} ({self.status})"

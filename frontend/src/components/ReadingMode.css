@@ -346,7 +346,7 @@ input:focus, textarea:focus {
   height: 100vh;
   background-color: var(--background-color);
   color: var(--primary-color);
-  max-width: 800px;
+  max-width: 900px;
   margin: 0 auto;
   padding: 0;
   overflow: hidden;
@@ -357,7 +357,7 @@ input:focus, textarea:focus {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 1rem;
+  padding: 0.75rem;
   background-color: var(--surface-color);
   border-bottom: 1px solid var(--border-color);
 }
@@ -369,10 +369,10 @@ input:focus, textarea:focus {
 }
 
 .cognition-title {
-  font-size: 1.2rem;
+  font-size: 1.1rem;
   font-weight: 600;
   margin: 0;
-  max-width: 300px;
+  max-width: 350px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -382,8 +382,8 @@ input:focus, textarea:focus {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
   border: none;
   border-radius: 4px;
   background-color: transparent;
@@ -418,13 +418,13 @@ input:focus, textarea:focus {
 
 /* Timeline Section */
 .timeline-wrapper {
-  padding: 0 1rem;
+  padding: 0 0.75rem;
   background: none !important;
   background-color: transparent !important;
 }
 
 .timeline-container {
-  margin: 0.75rem 0;
+  margin: 0.5rem 0;
   position: relative;
   background: none !important;
   background-color: transparent !important;
@@ -432,7 +432,7 @@ input:focus, textarea:focus {
 
 .timeline-canvas {
   width: 100%;
-  height: 40px;
+  height: 32px;
   border-radius: 4px;
   cursor: pointer;
   transition: all 0.2s ease;
@@ -448,15 +448,15 @@ input:focus, textarea:focus {
 .timeline-preview {
   display: flex;
   align-items: center;
-  gap: 4px;
-  height: 40px;
+  gap: 3px;
+  height: 32px;
   padding: 0 4px;
   background-color: var(--surface-color);
   border-radius: 4px;
 }
 
 .timeline-node {
-  height: 24px;
+  height: 20px;
   background-color: #444444;
   border-radius: 2px;
   position: relative;
@@ -561,7 +561,7 @@ input:focus, textarea:focus {
   height: 100%;
   flex: 1;
   overflow: hidden;
-  padding: 1rem;
+  padding: 0.75rem;
 }
 
 .synthesis-sections {
@@ -668,12 +668,12 @@ input:focus, textarea:focus {
 .node-content-box, 
 .node-content-editable {
   height: 100%;
-  padding: 1rem;
+  padding: 0.75rem;
   background-color: var(--input-background);
   color: var(--primary-color);
   border: 1px solid var(--border-color);
   border-radius: 6px;
-  font-size: 1rem;
+  font-size: 0.95rem;
   line-height: 1.6;
   overflow-y: auto;
   white-space: pre-wrap;
@@ -726,13 +726,13 @@ input:focus, textarea:focus {
 
 .synthesis-textarea {
   height: 100%;
-  padding: 1rem;
+  padding: 0.75rem;
   background-color: var(--input-background);
   color: var(--primary-color);
   border: 1px solid var(--border-color);
   border-radius: 6px;
   font-family: inherit;
-  font-size: 1rem;
+  font-size: 0.95rem;
   line-height: 1.6;
   resize: none;
   white-space: pre-wrap;
@@ -978,32 +978,32 @@ input:focus, textarea:focus {
 /* Responsive Adjustments */
 @media (max-width: 768px) {
   .cognition-title {
-    max-width: 150px;
-    font-size: 1rem;
+    max-width: 180px;
+    font-size: 0.95rem;
   }
   
   .reading-header {
-    padding: 0.75rem;
+    padding: 0.5rem;
   }
   
   .icon-button {
-    width: 32px;
-    height: 32px;
+    width: 28px;
+    height: 28px;
   }
   
   .reading-content {
-    padding: 0.75rem;
+    padding: 0.5rem;
   }
   
   .node-content-box, 
   .node-content-editable {
-    padding: 0.75rem;
-    font-size: 0.95rem;
+    padding: 0.5rem;
+    font-size: 0.9rem;
   }
   
   .synthesis-textarea {
-    padding: 0.75rem;
-    /* min-height: 80px; removed to let flexbox/height:100% work */
+    padding: 0.5rem;
+    font-size: 0.9rem;
   }
   
   .mobile-navigation {
@@ -1011,7 +1011,7 @@ input:focus, textarea:focus {
   }
 
   .timeline-canvas {
-    height: 30px;
+    height: 28px;
   }
   
   .timeline-info {

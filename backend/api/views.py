@@ -2,15 +2,17 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import api_view, action
 from rest_framework.response import Response
+from django.contrib.auth.models import User
 from .models import (
     Cognition, Node, PresetResponse, Arc, UserProfile, Widget, WidgetInteraction,
-    DocumentAnalysisResult, SemanticSegment
+    DocumentAnalysisResult, SemanticSegment, Group, GroupMembership, GroupInvitation
 )
 from .serializers import (
     CognitionSerializer, CognitionDetailSerializer, 
     NodeSerializer, PresetResponseSerializer,
     ArcSerializer, WidgetSerializer, WidgetInteractionSerializer,
-    DocumentAnalysisResultSerializer, SemanticSegmentSerializer
+    DocumentAnalysisResultSerializer, SemanticSegmentSerializer,
+    GroupSerializer, GroupDetailSerializer, GroupMembershipSerializer, GroupInvitationSerializer
 )
 # SynthesisSerializer removed - functionality consolidated into widgets
 from .serializers import UserProfileSerializer, CognitionCollectiveSerializer
@@ -515,6 +517,12 @@ class UserProfileViewSet(viewsets.ReadOnlyModelViewSet):
     serializer_class = UserProfileSerializer
     filter_backends = [filters.SearchFilter]
     search_fields = ['user__username']
+    
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            from .serializers import UserProfileDetailSerializer
+            return UserProfileDetailSerializer
+        return UserProfileSerializer
 
     @action(detail=True, methods=['post'])
     def follow(self, request, pk=None):
@@ -537,9 +545,11 @@ class UserProfileViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = self.get_serializer(request.user.profile)
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'])
-    def following(self, request):
-        following = request.user.profile.get_following()
+    @action(detail=True, methods=['get'])
+    def following(self, request, pk=None):
+        """Get list of users this profile is following"""
+        profile = self.get_object()
+        following = profile.get_following()
         page = self.paginate_queryset(following)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
@@ -547,14 +557,90 @@ class UserProfileViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = self.get_serializer(following, many=True)
         return Response(serializer.data)
 
-    @action(detail=False, methods=['get'])
-    def followers(self, request):
-        followers = request.user.profile.get_followers()
+    @action(detail=True, methods=['get'])
+    def followers(self, request, pk=None):
+        """Get list of users following this profile"""
+        profile = self.get_object()
+        followers = profile.get_followers()
         page = self.paginate_queryset(followers)
         if page is not None:
             serializer = self.get_serializer(page, many=True)
             return self.get_paginated_response(serializer.data)
         serializer = self.get_serializer(followers, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['get'])
+    def cognitions(self, request, pk=None):
+        """Get user's public cognitions"""
+        profile = self.get_object()
+        user_cognitions = Cognition.objects.filter(
+            user=profile.user, 
+            is_public=True
+        ).order_by('-created_at')
+        
+        page = self.paginate_queryset(user_cognitions)
+        if page is not None:
+            from .serializers import CognitionCollectiveSerializer
+            serializer = CognitionCollectiveSerializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        from .serializers import CognitionCollectiveSerializer
+        serializer = CognitionCollectiveSerializer(user_cognitions, many=True)
+        return Response(serializer.data)
+
+    @action(detail=True, methods=['patch'])
+    def update_bio(self, request, pk=None):
+        """Update user bio - only for own profile"""
+        profile = self.get_object()
+        if profile.user != request.user:
+            return Response(
+                {'error': 'You can only update your own bio'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        bio = request.data.get('bio', '')
+        if len(bio) > 500:  # Reasonable limit
+            return Response(
+                {'error': 'Bio must be 500 characters or less'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        profile.bio = bio
+        profile.save()
+        
+        serializer = self.get_serializer(profile)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def search_users(self, request):
+        """Search users by username or bio"""
+        query = request.query_params.get('q', '').strip()
+        if not query or len(query) < 2:
+            return Response({'results': []})
+        
+        # Search by username or bio
+        profiles = UserProfile.objects.filter(
+            models.Q(user__username__icontains=query) |
+            models.Q(bio__icontains=query)
+        ).select_related('user').order_by('user__username')
+        
+        # Exclude current user
+        if request.user.is_authenticated:
+            profiles = profiles.exclude(user=request.user)
+        
+        page = self.paginate_queryset(profiles)
+        if page is not None:
+            serializer = self.get_serializer(page, many=True)
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = self.get_serializer(profiles, many=True)
+        return Response(serializer.data)
+
+    @action(detail=False, methods=['get'])
+    def me(self, request):
+        """Get current user's detailed profile"""
+        from .serializers import UserProfileDetailSerializer
+        serializer = UserProfileDetailSerializer(request.user.profile, context={'request': request})
         return Response(serializer.data)
 
 
@@ -1084,3 +1170,286 @@ Return only the formatted markdown, no explanations or additional text."""
             {'error': f'Failed to convert text to markdown: {str(e)}'}, 
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+
+class GroupViewSet(viewsets.ModelViewSet):
+    """ViewSet for Group CRUD operations and member management"""
+    serializer_class = GroupSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """Return groups based on user permissions"""
+        if self.action == 'list':
+            # Show public groups and groups user is member of
+            return Group.objects.filter(
+                models.Q(is_public=True) |
+                models.Q(memberships__user=self.request.user)
+            ).distinct().order_by('-created_at')
+        return Group.objects.all()
+    
+    def get_serializer_class(self):
+        if self.action == 'retrieve':
+            return GroupDetailSerializer
+        return GroupSerializer
+    
+    def perform_create(self, serializer):
+        """Create group and make creator the founder and admin"""
+        group = serializer.save(founder=self.request.user)
+        # Add founder as admin member
+        group.add_member(self.request.user, role='admin')
+    
+    @action(detail=True, methods=['get'])
+    def members(self, request, pk=None):
+        """Get group members"""
+        group = self.get_object()
+        memberships = group.memberships.all().order_by('joined_at')
+        serializer = GroupMembershipSerializer(memberships, many=True)
+        return Response(serializer.data)
+    
+    @action(detail=True, methods=['post'])
+    def join(self, request, pk=None):
+        """Join a public group"""
+        group = self.get_object()
+        
+        if not group.is_public:
+            return Response(
+                {'error': 'This group requires an invitation to join'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if group.is_member(request.user):
+            return Response(
+                {'error': 'You are already a member of this group'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        group.add_member(request.user)
+        return Response({'message': f'Successfully joined {group.name}'})
+    
+    @action(detail=True, methods=['post'])
+    def leave(self, request, pk=None):
+        """Leave a group"""
+        group = self.get_object()
+        
+        if not group.is_member(request.user):
+            return Response(
+                {'error': 'You are not a member of this group'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if group.founder == request.user:
+            return Response(
+                {'error': 'Group founder cannot leave. Transfer ownership or delete the group.'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        group.remove_member(request.user)
+        return Response({'message': f'Successfully left {group.name}'})
+    
+    @action(detail=True, methods=['post'])
+    def invite(self, request, pk=None):
+        """Invite a user to the group"""
+        group = self.get_object()
+        
+        if not group.is_admin(request.user):
+            return Response(
+                {'error': 'Only group admins can send invitations'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        username = request.data.get('username')
+        message = request.data.get('message', '')
+        
+        if not username:
+            return Response(
+                {'error': 'Username is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            invitee = User.objects.get(username=username)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if group.is_member(invitee):
+            return Response(
+                {'error': 'User is already a member of this group'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Check if invitation already exists
+        existing_invitation = GroupInvitation.objects.filter(
+            group=group, 
+            invitee=invitee, 
+            status='pending'
+        ).first()
+        
+        if existing_invitation:
+            return Response(
+                {'error': 'Invitation already sent to this user'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        invitation = GroupInvitation.objects.create(
+            group=group,
+            inviter=request.user,
+            invitee=invitee,
+            message=message
+        )
+        
+        serializer = GroupInvitationSerializer(invitation)
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    
+    @action(detail=True, methods=['patch'])
+    def update_member_role(self, request, pk=None):
+        """Update a member's role (admin only)"""
+        group = self.get_object()
+        
+        if not group.is_admin(request.user):
+            return Response(
+                {'error': 'Only group admins can update member roles'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        user_id = request.data.get('user_id')
+        new_role = request.data.get('role')
+        
+        if not user_id or not new_role:
+            return Response(
+                {'error': 'user_id and role are required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if new_role not in ['member', 'admin']:
+            return Response(
+                {'error': 'Invalid role. Must be "member" or "admin"'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            membership = group.memberships.get(user_id=user_id)
+            membership.role = new_role
+            membership.save()
+            
+            serializer = GroupMembershipSerializer(membership)
+            return Response(serializer.data)
+        except GroupMembership.DoesNotExist:
+            return Response(
+                {'error': 'User is not a member of this group'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+    
+    @action(detail=True, methods=['post'])
+    def remove_member(self, request, pk=None):
+        """Remove a member from the group (admin only)"""
+        group = self.get_object()
+        
+        if not group.is_admin(request.user):
+            return Response(
+                {'error': 'Only group admins can remove members'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        user_id = request.data.get('user_id')
+        
+        if not user_id:
+            return Response(
+                {'error': 'user_id is required'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        try:
+            user_to_remove = User.objects.get(id=user_id)
+        except User.DoesNotExist:
+            return Response(
+                {'error': 'User not found'}, 
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        if group.founder == user_to_remove:
+            return Response(
+                {'error': 'Cannot remove group founder'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        if not group.is_member(user_to_remove):
+            return Response(
+                {'error': 'User is not a member of this group'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        group.remove_member(user_to_remove)
+        return Response({'message': f'Successfully removed {user_to_remove.username} from {group.name}'})
+    
+    @action(detail=True, methods=['get'])
+    def cognitions(self, request, pk=None):
+        """Get group cognitions"""
+        group = self.get_object()
+        
+        # Only members can view group cognitions
+        if not group.is_member(request.user):
+            return Response(
+                {'error': 'Only group members can view group cognitions'}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        cognitions = group.cognitions.order_by('-created_at')
+        page = self.paginate_queryset(cognitions)
+        if page is not None:
+            serializer = CognitionSerializer(page, many=True, context={'request': request})
+            return self.get_paginated_response(serializer.data)
+        
+        serializer = CognitionSerializer(cognitions, many=True, context={'request': request})
+        return Response(serializer.data)
+
+
+class GroupInvitationViewSet(viewsets.ReadOnlyModelViewSet):
+    """ViewSet for managing group invitations"""
+    serializer_class = GroupInvitationSerializer
+    permission_classes = [IsAuthenticated]
+    
+    def get_queryset(self):
+        """Return invitations for current user"""
+        return GroupInvitation.objects.filter(invitee=self.request.user).order_by('-created_at')
+    
+    @action(detail=True, methods=['post'])
+    def accept(self, request, pk=None):
+        """Accept a group invitation"""
+        invitation = self.get_object()
+        
+        if invitation.status != 'pending':
+            return Response(
+                {'error': 'This invitation has already been responded to'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Add user to group
+        invitation.group.add_member(request.user)
+        
+        # Update invitation status
+        invitation.status = 'accepted'
+        invitation.responded_at = timezone.now()
+        invitation.save()
+        
+        return Response({'message': f'Successfully joined {invitation.group.name}'})
+    
+    @action(detail=True, methods=['post'])
+    def decline(self, request, pk=None):
+        """Decline a group invitation"""
+        invitation = self.get_object()
+        
+        if invitation.status != 'pending':
+            return Response(
+                {'error': 'This invitation has already been responded to'}, 
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Update invitation status
+        invitation.status = 'declined'
+        invitation.responded_at = timezone.now()
+        invitation.save()
+        
+        return Response({'message': f'Declined invitation to {invitation.group.name}'})

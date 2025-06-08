@@ -26,6 +26,8 @@ router.register(r'preset-responses', views.PresetResponseViewSet, basename='pres
 router.register(r'arcs', views.ArcViewSet, basename='arc')
 router.register(r'profiles', views.UserProfileViewSet, basename='profile')
 router.register(r'widgets', views.WidgetViewSet, basename='widget')
+router.register(r'groups', views.GroupViewSet, basename='group')
+router.register(r'invitations', views.GroupInvitationViewSet, basename='invitation')
 
 # Append router URLs to the urlpatterns
 urlpatterns += router.urls

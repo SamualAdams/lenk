@@ -26,9 +26,20 @@ function Navigation() {
           >
             Collective
           </Link>
+          <Link 
+            to="/groups" 
+            className={`nav-link${location.pathname.startsWith('/groups') ? ' active' : ''}`}
+          >
+            Groups
+          </Link>
           {currentUser ? (
             <>
-              <span className="username">{currentUser.username}</span>
+              <Link 
+                to="/profile" 
+                className={`nav-link username-link${location.pathname.startsWith('/profile') ? ' active' : ''}`}
+              >
+                {currentUser.username}
+              </Link>
               <button className="logout-btn" onClick={handleLogout}>Logout</button>
             </>
           ) : (

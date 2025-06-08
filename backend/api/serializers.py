@@ -3,7 +3,7 @@ from rest_framework import serializers
 from django.contrib.auth.models import User
 from .models import (
     Cognition, Node, PresetResponse, Arc, UserProfile, Widget, WidgetInteraction,
-    DocumentAnalysisResult, SemanticSegment
+    DocumentAnalysisResult, SemanticSegment, Group, GroupMembership, GroupInvitation
 )
 # Synthesis and SynthesisPresetLink removed - functionality consolidated into widgets
 
@@ -27,6 +27,38 @@ class UserProfileSerializer(serializers.ModelSerializer):
         request = self.context.get('request')
         if request and request.user.is_authenticated:
             return request.user.profile.following.filter(pk=obj.pk).exists()
+        return False
+
+class UserProfileDetailSerializer(UserProfileSerializer):
+    join_date = serializers.DateTimeField(source='user.date_joined', read_only=True)
+    public_cognitions_count = serializers.SerializerMethodField()
+    recent_activity = serializers.SerializerMethodField()
+    recent_cognitions = serializers.SerializerMethodField()
+    is_own_profile = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = UserProfile
+        fields = ['id', 'username', 'bio', 'follower_count', 'following_count', 
+                  'is_following', 'join_date', 'public_cognitions_count', 
+                  'recent_activity', 'recent_cognitions', 'is_own_profile']
+    
+    def get_public_cognitions_count(self, obj):
+        return obj.user.cognitions.filter(is_public=True).count()
+    
+    def get_recent_activity(self, obj):
+        # Get the most recent public cognition date
+        recent_cognition = obj.user.cognitions.filter(is_public=True).order_by('-updated_at').first()
+        return recent_cognition.updated_at if recent_cognition else obj.user.date_joined
+    
+    def get_recent_cognitions(self, obj):
+        # Get 3 most recent public cognitions
+        recent = obj.user.cognitions.filter(is_public=True).order_by('-updated_at')[:3]
+        return [{'id': c.id, 'title': c.title, 'created_at': c.created_at} for c in recent]
+    
+    def get_is_own_profile(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.user == request.user
         return False
 
 class CognitionCollectiveSerializer(serializers.ModelSerializer):
@@ -172,12 +204,24 @@ class CognitionSerializer(serializers.ModelSerializer):
     nodes_count = serializers.SerializerMethodField()
     username = serializers.CharField(source='user.username', read_only=True)
     user_id = serializers.ReadOnlyField(source='user.id')
+    group_name = serializers.CharField(source='group.name', read_only=True)
+    group_id = serializers.ReadOnlyField(source='group.id')
+    is_group_cognition = serializers.ReadOnlyField()
+    owner_display = serializers.ReadOnlyField(source='get_owner_display')
+    can_edit = serializers.SerializerMethodField()
     
     class Meta:
         model = Cognition
         fields = ['id', 'title', 'raw_content', 'is_starred', 'created_at',
                   'updated_at', 'nodes_count', 'table_of_contents', 'is_public',
-                  'username', 'user_id']
+                  'username', 'user_id', 'group_name', 'group_id', 'group',
+                  'is_group_cognition', 'owner_display', 'can_edit']
+    
+    def get_can_edit(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.can_edit(request.user)
+        return False
     
     def get_nodes_count(self, obj):
         return obj.nodes.count()
@@ -203,3 +247,77 @@ class ArcSerializer(serializers.ModelSerializer):
         model = Arc
         fields = ['id', 'source_node', 'target_node', 'arc_type', 
                  'description', 'strength', 'created_at']
+
+
+class GroupMembershipSerializer(serializers.ModelSerializer):
+    username = serializers.CharField(source='user.username', read_only=True)
+    user_id = serializers.IntegerField(source='user.id', read_only=True)
+    
+    class Meta:
+        model = GroupMembership
+        fields = ['id', 'user_id', 'username', 'role', 'joined_at']
+
+
+class GroupSerializer(serializers.ModelSerializer):
+    founder_username = serializers.CharField(source='founder.username', read_only=True)
+    member_count = serializers.ReadOnlyField()
+    cognition_count = serializers.ReadOnlyField()
+    is_member = serializers.SerializerMethodField()
+    is_admin = serializers.SerializerMethodField()
+    user_role = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = Group
+        fields = [
+            'id', 'name', 'description', 'founder', 'founder_username',
+            'created_at', 'updated_at', 'is_public', 'member_count', 
+            'cognition_count', 'is_member', 'is_admin', 'user_role'
+        ]
+        read_only_fields = ['founder', 'created_at', 'updated_at']
+    
+    def get_is_member(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.is_member(request.user)
+        return False
+    
+    def get_is_admin(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            return obj.is_admin(request.user)
+        return False
+    
+    def get_user_role(self, obj):
+        request = self.context.get('request')
+        if request and request.user.is_authenticated:
+            membership = obj.memberships.filter(user=request.user).first()
+            return membership.role if membership else None
+        return None
+
+
+class GroupDetailSerializer(GroupSerializer):
+    members = GroupMembershipSerializer(source='memberships', many=True, read_only=True)
+    recent_cognitions = serializers.SerializerMethodField()
+    
+    class Meta(GroupSerializer.Meta):
+        fields = GroupSerializer.Meta.fields + ['members', 'recent_cognitions']
+    
+    def get_recent_cognitions(self, obj):
+        # Get 5 most recent group cognitions
+        recent = obj.cognitions.order_by('-created_at')[:5]
+        return CognitionSerializer(recent, many=True, context=self.context).data
+
+
+class GroupInvitationSerializer(serializers.ModelSerializer):
+    group_name = serializers.CharField(source='group.name', read_only=True)
+    inviter_username = serializers.CharField(source='inviter.username', read_only=True)
+    invitee_username = serializers.CharField(source='invitee.username', read_only=True)
+    
+    class Meta:
+        model = GroupInvitation
+        fields = [
+            'id', 'group', 'group_name', 'inviter', 'inviter_username',
+            'invitee', 'invitee_username', 'message', 'status',
+            'created_at', 'responded_at'
+        ]
+        read_only_fields = ['inviter', 'created_at', 'responded_at']
